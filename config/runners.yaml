@@ -1,0 +1,58 @@
+# Container images for the clean-up gates. Every build, test and scan of a repository runs in one of these,
+# never on the host. See docs/adr/0008-ephemeral-containers-for-gates.md.
+#
+# Pinned by digest where the image has been pulled. CHECK: pin the .NET SDK images the same way after their first pull:
+#   docker inspect --format '{{index .RepoDigests 0}}' <image>
+runners:
+  node:
+    # Node 24 LTS: Angular 22 needs ^22.22.3 or ^24.15.0, and Angular 20 and 21 also run on 24 (angular.dev/reference/versions).
+    image: node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c
+    caches:
+      aisdlc-npm: /root/.npm
+  dotnet9:
+    image: mcr.microsoft.com/dotnet/sdk:9.0
+    caches:
+      aisdlc-nuget: /root/.nuget/packages
+    environment:
+      NUGET_PACKAGES: /root/.nuget/packages
+      DOTNET_CLI_HOME: /tmp
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  dotnet10:
+    image: mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b
+    caches:
+      aisdlc-nuget: /root/.nuget/packages
+    environment:
+      NUGET_PACKAGES: /root/.nuget/packages
+      DOTNET_CLI_HOME: /tmp
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  gitleaks:
+    image: zricethezav/gitleaks:v8.24.0@sha256:2bcceac45179b3a91bff11a824d0fb952585b429e54fc928728b1d4d5c3e5176
+  sonar-scanner:
+    # Its cache is in the image's own home, so a new volume starts with the right owner.
+    image: sonarsource/sonar-scanner-cli:11.3@sha256:7462f132388135e32b948f8f18ff0db9ae28a87c6777f1df5b2207e04a6d7c5c
+    caches:
+      aisdlc-sonar: /opt/sonar-scanner/.sonar
+  dotnet-sonar:
+    # Built locally, not pulled: docker build -t aisdlc/dotnet-sonar:1 config/runners/dotnet-sonar
+    # Its base image is pinned by digest in that Dockerfile.
+    image: aisdlc/dotnet-sonar:1
+    caches:
+      aisdlc-nuget: /root/.nuget/packages
+      # Java takes its home from the system user (/root), not $HOME; the analyzers are cached here.
+      aisdlc-sonar-dotnet: /root/.sonar
+    environment:
+      NUGET_PACKAGES: /root/.nuget/packages
+      # begin installs MSBuild hooks in $HOME; the root file system is read-only, /tmp is not.
+      HOME: /tmp
+      DOTNET_CLI_HOME: /tmp
+
+# Which runner a program runs in. `dotnet` is not listed: it runs in dotnet<major>, taken from the repository's
+# TargetFramework, so a .NET 9 repository is tested with the .NET 9 SDK.
+commands:
+  node: node
+  npm: node
+  gitleaks: gitleaks
+  sonar-scanner: sonar-scanner
+  scan-dotnet: dotnet-sonar

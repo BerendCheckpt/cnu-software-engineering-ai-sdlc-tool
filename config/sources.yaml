@@ -1,0 +1,97 @@
+# Official documentation the agent may use. Nothing here is downloaded until a human approves it:
+#   aisdlc docs request <id>   ->  aisdlc approve <approval-id>
+# Downloaded pages are stored read-only under knowledge/docs/<framework>/<version>/<id>.md.
+#
+# Entries marked "added:" were not in the original list; they are needed as the official source or target
+# documentation for a migration path in config/migrations.yaml. Review them.
+
+allowedHosts:
+  - learn.microsoft.com
+  - angular.dev
+  # added: archived docs of the Angular versions an app migrates from. angular.dev is always the latest version.
+  - v20.angular.dev
+  - v21.angular.dev
+  - xunit.net
+  - vitest.dev
+  - www.typescriptlang.org
+  - developer.mozilla.org
+
+# Hosts a repository may be cloned from (https only, shallow, after approval).
+repositoryHosts:
+  - github.com
+  - dev.azure.com
+
+sources:
+  # C# language, 12 to 15
+  - { id: csharp-12, framework: csharp, version: "12", url: https://learn.microsoft.com/en-us/dotnet/csharp/whats-new/csharp-12 }
+  - { id: csharp-13, framework: csharp, version: "13", url: https://learn.microsoft.com/en-us/dotnet/csharp/whats-new/csharp-13 }
+  - { id: csharp-14, framework: csharp, version: "14", url: https://learn.microsoft.com/en-us/dotnet/csharp/whats-new/csharp-14 }
+  - { id: csharp-15, framework: csharp, version: "15", url: https://learn.microsoft.com/en-us/dotnet/csharp/whats-new/csharp-15 }
+
+  # .NET 10
+  - { id: aspnetcore-10, framework: aspnetcore, version: "10", url: https://learn.microsoft.com/en-us/aspnet/core/release-notes/aspnetcore-10.0 }
+  - { id: dotnet-10-sdk, framework: dotnet, version: "10", url: https://learn.microsoft.com/en-us/dotnet/core/whats-new/dotnet-10/sdk }
+  - { id: dotnet-10-runtime, framework: dotnet, version: "10", url: https://learn.microsoft.com/en-us/dotnet/core/whats-new/dotnet-10/runtime }
+  - { id: dotnet-10-libraries, framework: dotnet, version: "10", url: https://learn.microsoft.com/en-us/dotnet/core/whats-new/dotnet-10/libraries }
+  # CHECK: this URL answered 404 on 2026-11-03. The page may have moved; replace the URL once the right one is known.
+  - { id: dotnet-10-compat-core-libraries, framework: dotnet, version: "10", url: https://learn.microsoft.com/en-us/dotnet/core/compatibility/core-libraries/10.0 }
+  # added: the .NET 10 breaking-change overview, the official target guide for a .NET 9 -> 10 migration
+  - { id: dotnet-10-compat, framework: dotnet, version: "10", url: https://learn.microsoft.com/en-us/dotnet/core/compatibility/10 }
+  # added: the official ASP.NET Core 9 -> 10 migration article (global.json, target framework, packages)
+  - { id: aspnetcore-migrate-9-to-10, framework: aspnetcore, version: "10", url: https://learn.microsoft.com/en-us/aspnet/core/migration/90-to-100 }
+
+  # .NET 9 (the other of the latest two versions)
+  # added: source-side documentation for a .NET 9 -> 10 migration
+  - { id: dotnet-9-overview, framework: dotnet, version: "9", url: https://learn.microsoft.com/en-us/dotnet/core/whats-new/dotnet-9/overview }
+  - { id: dotnet-9-compat, framework: dotnet, version: "9", url: https://learn.microsoft.com/en-us/dotnet/core/compatibility/9.0 }
+
+  # .NET practices
+  - { id: dotnet-advanced-programming, framework: dotnet, version: any, url: https://learn.microsoft.com/en-us/dotnet/navigate/advanced-programming/ }
+  - { id: dotnet-security, framework: dotnet, version: any, url: https://learn.microsoft.com/en-us/dotnet/standard/security }
+
+  # Testing
+  - { id: xunit-docs, framework: xunit, version: any, url: https://xunit.net/docs }
+  # added: Vitest is in scope, but no link was given
+  - { id: vitest-guide, framework: vitest, version: any, url: https://vitest.dev/guide/ }
+
+  # Angular guides
+  - { id: angular-style-guide, framework: angular, version: latest, url: https://angular.dev/style-guide }
+  - { id: angular-signals, framework: angular, version: latest, url: https://angular.dev/guide/signals }
+  - { id: angular-components, framework: angular, version: latest, url: https://angular.dev/guide/components }
+  - { id: angular-templates, framework: angular, version: latest, url: https://angular.dev/guide/templates }
+  - { id: angular-directives, framework: angular, version: latest, url: https://angular.dev/guide/directives }
+  - { id: angular-di, framework: angular, version: latest, url: https://angular.dev/guide/di }
+  - { id: angular-routing, framework: angular, version: latest, url: https://angular.dev/guide/routing }
+  - { id: angular-forms, framework: angular, version: latest, url: https://angular.dev/guide/forms }
+  - { id: angular-http, framework: angular, version: latest, url: https://angular.dev/guide/http }
+  - { id: angular-performance, framework: angular, version: latest, url: https://angular.dev/guide/performance }
+  - { id: angular-testing, framework: angular, version: latest, url: https://angular.dev/guide/testing }
+  - { id: angular-aria, framework: angular, version: latest, url: https://angular.dev/guide/aria }
+  - { id: angular-i18n, framework: angular, version: latest, url: https://angular.dev/guide/i18n }
+  - { id: angular-animations, framework: angular, version: latest, url: https://angular.dev/guide/animations }
+  - { id: angular-drag-drop, framework: angular, version: latest, url: https://angular.dev/guide/drag-drop }
+
+  # Angular versions and updates
+  # added: source and target documentation for an Angular 20 -> 22 migration. The interactive update guide
+  # (angular.dev/update-guide) is left out on purpose: it is rendered in the browser, so a download is an empty page.
+  - { id: angular-versions, framework: angular, version: latest, url: https://angular.dev/reference/versions }
+  - { id: angular-releases, framework: angular, version: latest, url: https://angular.dev/reference/releases }
+  - { id: angular-cli-update, framework: angular, version: latest, url: https://angular.dev/cli/update }
+  - { id: angular-migrations, framework: angular, version: latest, url: https://angular.dev/reference/migrations }
+  - { id: angular-migrating-to-vitest, framework: angular, version: latest, url: https://angular.dev/guide/testing/migrating-to-vitest }
+  - { id: angular-20-versions, framework: angular, version: "20", url: https://v20.angular.dev/reference/versions }
+  - { id: angular-20-releases, framework: angular, version: "20", url: https://v20.angular.dev/reference/releases }
+  - { id: angular-20-testing, framework: angular, version: "20", url: https://v20.angular.dev/guide/testing }
+  - { id: angular-21-releases, framework: angular, version: "21", url: https://v21.angular.dev/reference/releases }
+
+  # Angular best practices
+  - { id: angular-bp-performance, framework: angular, version: latest, url: https://angular.dev/best-practices/performance }
+  - { id: angular-bp-error-handling, framework: angular, version: latest, url: https://angular.dev/best-practices/error-handling }
+  - { id: angular-bp-a11y, framework: angular, version: latest, url: https://angular.dev/best-practices/a11y }
+  - { id: angular-bp-security, framework: angular, version: latest, url: https://angular.dev/best-practices/security }
+
+  # TypeScript and JavaScript
+  # added: the official JavaScript -> TypeScript migration guide (target) and the JavaScript reference (source)
+  - { id: typescript-migrating-from-js, framework: typescript, version: latest, url: https://www.typescriptlang.org/docs/handbook/migrating-from-javascript.html }
+  - { id: typescript-handbook, framework: typescript, version: latest, url: https://www.typescriptlang.org/docs/handbook/intro.html }
+  - { id: javascript-guide, framework: javascript, version: latest, url: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide }

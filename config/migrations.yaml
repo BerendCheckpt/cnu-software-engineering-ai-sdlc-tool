@@ -1,0 +1,25 @@
+# Migration paths that can be grounded in official documentation.
+# A migration is only planned when every doc in sourceDocs AND targetDocs is downloaded (ids from sources.yaml).
+# A pair that is not listed here is escalated to a human: there is no grounded way to do it.
+#
+# Crystallized migrations live in skills/migrations/<from>-to-<to>/SKILL.md and are checked first.
+
+migrations:
+  - from: net9
+    to: net10
+    sourceDocs: [dotnet-9-overview, dotnet-9-compat]
+    # dotnet-10-compat-core-libraries is left out: its URL answered 404 on 2026-11-03 (see config/sources.yaml).
+    targetDocs: [aspnetcore-migrate-9-to-10, dotnet-10-compat]
+    tool: "Set <TargetFramework> to net10.0 in each project file, then build and fix what the breaking-change guide lists."
+
+  - from: angular20
+    to: angular22
+    sourceDocs: [angular-20-versions, angular-20-releases, angular-20-testing]
+    targetDocs: [angular-versions, angular-releases, angular-cli-update, angular-migrations, angular-migrating-to-vitest, angular-21-releases]
+    tool: "Run ng update @angular/core@21 @angular/cli@21, then @22: one major version at a time, as the Angular release policy says."
+
+  - from: js
+    to: ts
+    sourceDocs: [javascript-guide]
+    targetDocs: [typescript-migrating-from-js]
+    tool: "Add a tsconfig.json with allowJs and checkJs, then rename files to .ts one at a time, as the TypeScript guide describes."

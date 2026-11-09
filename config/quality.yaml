@@ -1,0 +1,11 @@
+# What "done" means for SonarQube (ADR 0010). Every task that is scanned, a solution's `eval` or a clean-up batch's
+# `check`, is checked against these rules. Severities are SonarQube's impact severities: BLOCKER, HIGH, MEDIUM, LOW,
+# INFO. Older severities are mapped: CRITICAL is HIGH, MAJOR is MEDIUM, MINOR is LOW.
+
+sonar:
+  # A task is not done while an open issue has one of these severities, including issues that were there before it.
+  blockingSeverities: [BLOCKER, HIGH]
+  # Shown to the model to fix and listed in the reports, but they never fail a check.
+  reportedSeverities: [MEDIUM]
+  # Fix attempts after the first failed check. One more failure escalates the task to a human as a GitHub issue.
+  maxFixAttempts: 3

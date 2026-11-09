@@ -1,0 +1,45 @@
+# What a migration plan leaves out, so that its steps point at code that really changes.
+# Everything is compared case-insensitively. Docs that were downloaded before a change to boilerplateHeadings
+# or to the area headings keep their old sections until they are downloaded again.
+
+# Words every project of a stack contains: they match code whatever a doc section is about.
+# A plan lists the terms it found too common in its docs under "Ignored as too common"; copy them here to keep them out.
+commonTerms:
+  # Product names from navigation and support-policy pages.
+  - typescript
+  - javascript
+  - github
+  - powershell
+  - angular
+  - dotnet
+  - nodejs
+  - node.js
+  # Files and checks of every new project.
+  - package.json
+  - tsconfig.json
+  - Program.cs
+  - appsettings.json
+  - launchSettings.json
+  - IsDevelopment
+
+# Sections that are navigation or policy, not migration steps. A `###` under such a `##` is left out too.
+boilerplateHeadings:
+  - Feedback
+  - Additional resources
+  - See also
+  - In this article
+  - Prerequisites
+  - Developer Preview
+  - Actively supported versions
+  - Unsupported Angular versions
+  - Before v9
+
+# A section under one of these `##` areas becomes a step only when the repository shows it uses the area.
+# A marker with `*` is a file glob, anything else is a word searched in the code. An area not listed is not gated.
+areas:
+  Blazor: ["*.razor", Microsoft.AspNetCore.Components]
+  Windows Forms: ["<UseWindowsForms>"]
+  Windows Presentation Foundation (WPF): ["<UseWPF>", "*.xaml"]
+  WPF: ["<UseWPF>", "*.xaml"]
+  Entity Framework Core: [Microsoft.EntityFrameworkCore]
+  Containers: ["Dockerfile*", ContainerImageName, ContainerRepository]

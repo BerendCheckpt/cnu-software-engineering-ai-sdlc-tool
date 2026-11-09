@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "aisdlc": {
+      "command": "node",
+      "args": ["dist/adapters/mcp/main.js"]
+    }
+  }
+}

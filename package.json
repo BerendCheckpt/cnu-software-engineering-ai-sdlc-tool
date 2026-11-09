@@ -1,0 +1,36 @@
+{
+  "name": "cnu-software-engineering-ai-sdlc-tool",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Deterministic-first knowledge, migration planning and evaluation tool for small local coding models",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "bin": {
+    "aisdlc": "dist/adapters/cli/main.js"
+  },
+  "exports": {
+    "./frontdoor": "./dist/adapters/frontdoor/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --coverage",
+    "aisdlc": "node dist/adapters/cli/main.js",
+    "mcp": "node dist/adapters/mcp/main.js",
+    "gateway": "node dist/adapters/gateway/main.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "turndown": "7.2.4",
+    "yaml": "2.9.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@types/turndown": "5.0.6",
+    "@vitest/coverage-v8": "5.1.0",
+    "typescript": "5.9.3",
+    "vitest": "5.1.0"
+  }
+}

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+lcov.info
+.env
+
+# Data roots: local, read-only context and per-session output.
+knowledge/knowledge.db*
+knowledge/docs/
+mirrors/
+work/

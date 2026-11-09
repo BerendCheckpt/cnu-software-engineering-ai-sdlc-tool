@@ -1,0 +1,30 @@
+# Clean-up policy: how findings become batches, and which changes need a human before they are committed.
+# Patterns are JavaScript regular expressions, matched case-insensitively. Paths use forward slashes.
+
+batches:
+  maxFindings: 10
+  maxFiles: 5
+  # Most urgent first. A category left out is not planned at all.
+  order: [security, bug, dependency, maintainability, readability]
+
+gates:
+  # Changing or deleting an existing test needs a human. Adding a test does not.
+  testFiles:
+    - '(^|/)[^/]*\.tests?/'
+    - '\.(spec|test)\.[cm]?[jt]sx?$'
+    - '(^|/)tests?/'
+  dependencyFiles:
+    - '(^|/)package(-lock)?\.json$'
+    - '(^|/)(pnpm-lock\.yaml|yarn\.lock)$'
+    - '\.csproj$'
+    - '(^|/)(Directory\.Packages\.props|Directory\.Build\.props|packages\.lock\.json|global\.json)$'
+  securityFiles:
+    - '(auth|login|password|token|secret|crypto|cipher|jwt|oauth|permission|identity)'
+    - '(^|/)(appsettings[^/]*\.json|\.env[^/]*|web\.config)$'
+  # Matched against every added or removed line.
+  securityContent:
+    - '\[(Authorize|AllowAnonymous)'
+    - '\b(password|secret|apikey|api_key|private_?key|bearer)\b'
+    - '\b(createHash|createCipher|randomBytes|SHA1|MD5|RNGCryptoServiceProvider|Rfc2898DeriveBytes)\b'
+    - '\b(FromSqlRaw|ExecuteSqlRaw|SqlCommand|innerHTML|bypassSecurityTrust|eval)\b'
+    - '\b(UseCors|AddAuthentication|AddAuthorization|ValidateIssuer|ValidateAudience)\b'
