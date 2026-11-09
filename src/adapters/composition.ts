@@ -2,8 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DecideApproval, RequestApproval } from "../application/approvals.js";
 import {
-  AnalyzeRepository, CheckBatch, CleanupFolders, CleanupStatus, DecideCleanupChange, DecideCleanupPlan, FinishCleanup,
-  MeasureWorkspace, NextBatch, PublishCleanup, SkipBatch,
+  AnalyzeRepository, CheckBatch, CleanupFolders, CleanupStatus, FinishCleanup, MeasureWorkspace, NextBatch, SkipBatch,
 } from "../application/cleanup.js";
 import { CrystallizeFolders, CrystallizeMigration, RequestCrystallization } from "../application/crystallize.js";
 import { PullDocs, ReindexDocs, RequestDocs, SearchDocs } from "../application/docs.js";
@@ -37,6 +36,7 @@ import { YamlMigrationCatalog } from "../infrastructure/migration/yamlMigrationC
 import { loadNoiseRules } from "../infrastructure/migration/yamlNoiseRules.js";
 import { ContainerProcessRunner } from "../infrastructure/process/containerProcessRunner.js";
 import { ExecFileRunner } from "../infrastructure/process/execFileRunner.js";
+import { ProgressHub, SessionLog } from "../infrastructure/progress/progress.js";
 import { RunnerCatalog } from "../infrastructure/process/runnerCatalog.js";
 import { loadQualityPolicy } from "../infrastructure/quality/yamlQualityPolicy.js";
 import { CleanupReportWriter } from "../infrastructure/reporting/cleanupReportWriter.js";
@@ -72,6 +72,8 @@ export interface AppPaths {
   runners: string;
   /** The interactive session's command history. */
   history: string;
+  /** One `<session>.jsonl` of step events per session, for listeners such as `aisdlc watch`. */
+  sessions: string;
 }
 
 export function appPaths(home = process.env.AISDLC_HOME ?? PACKAGE_ROOT): AppPaths {
@@ -89,6 +91,7 @@ export function appPaths(home = process.env.AISDLC_HOME ?? PACKAGE_ROOT): AppPat
     quality: path.join(home, "config", "quality.yaml"),
     runners: path.join(home, "config", "runners.yaml"),
     history: path.join(home, "work", "shell-history.txt"),
+    sessions: path.join(home, "work", "sessions"),
   };
 }
 
@@ -138,7 +141,12 @@ export function createApp(paths: AppPaths = appPaths(), options: AppOptions = {}
       fixLoop, mirror)
     : new RunEvaluations(paths.work, solutions, (id) => parts.gates.forRun(id, "solution"), parts, fixLoop, mirror);
   const writeReport = new WriteReport(paths.work, solutions, new MarkdownReportWriter(), fixLoops);
-  const cleanup = createCleanup(paths, db, approvals, requestApproval, mirror, runner, parts, fixLoop);
+  // Every step goes to the session's log; adapters attach the terminal as a second listener.
+  const sessionLog = new SessionLog(paths.sessions);
+  const progress = new ProgressHub();
+  progress.attach(sessionLog);
+  const searchDocs = new SearchDocs(docs);
+  const cleanup = createCleanup(paths, db, mirror, runner, parts, fixLoop, progress, searchDocs);
   const migrations = new YamlMigrationCatalog(paths.migrations, paths.migrationSkills);
   const noise = loadNoiseRules(paths.noise);
   const archive = new FileDocArchive(paths.docs);
@@ -163,7 +171,7 @@ export function createApp(paths: AppPaths = appPaths(), options: AppOptions = {}
     requestDocs,
     pullDocs: new PullDocs(sources, approvals, new HttpDocFetcher(new UrlPolicy(sources.docHosts())), archive, docs, chunker),
     reindexDocs: new ReindexDocs(sources, archive, docs, chunker),
-    searchDocs: new SearchDocs(docs),
+    searchDocs,
     hasDocs: (id: string) => docs.hasSource(id),
     requestClone: new RequestClone(sources, requestApproval),
     mirrorRepository: new MirrorRepository(sources, approvals, mirror),
@@ -176,6 +184,8 @@ export function createApp(paths: AppPaths = appPaths(), options: AppOptions = {}
       new MarkdownSkillWriter(), requestApproval),
     crystallizeMigration: new CrystallizeMigration(crystallizeFolders, approvals, solutions),
     cleanup,
+    progress,
+    sessionLog,
     close: () => db.close(),
   };
 }
@@ -185,26 +195,24 @@ export function createApp(paths: AppPaths = appPaths(), options: AppOptions = {}
  * registries, one for SonarQube. Git, the push and `gh` run on the host with the engineer's own credentials.
  */
 function createCleanup(
-  paths: AppPaths, db: ReturnType<typeof openDatabase>, approvals: SqliteApprovalStore, requestApproval: RequestApproval,
-  mirror: GitRepoMirror, host: ExecFileRunner, parts: CleanupParts, fixLoop: SonarFixLoop,
+  paths: AppPaths, db: ReturnType<typeof openDatabase>, mirror: GitRepoMirror, host: ExecFileRunner,
+  parts: CleanupParts, fixLoop: SonarFixLoop, progress: ProgressHub, searchDocs: SearchDocs,
 ) {
   const policy = loadCleanupPolicy(paths.cleanupPolicy);
   const store = new SqliteCleanupStore(db);
   const folders = new CleanupFolders(paths.work);
   const git = new GitWorkspace(host);
-  const measure = new MeasureWorkspace(parts.restorer, parts.gates);
+  const measure = new MeasureWorkspace(parts.restorer, parts.gates, progress);
   const writer = new CleanupReportWriter();
   return {
     analyze: new AnalyzeRepository(folders, store, mirror, git, parts.sandbox, measure,
-      new CleanupPlanner(policy.limits, policy.order), writer, requestApproval),
-    plan: new DecideCleanupPlan(approvals, store),
-    next: new NextBatch(store, git, parts.formatters),
-    check: new CheckBatch(store, git, parts.sandbox, measure, new DiffClassifier(policy.patterns), requestApproval,
-      fixLoop, mirror, parts.gates),
-    change: new DecideCleanupChange(approvals, store, git),
-    skip: new SkipBatch(store, git, fixLoop),
-    finish: new FinishCleanup(folders, store, parts.gates, writer, requestApproval, fixLoop),
-    publish: new PublishCleanup(folders, approvals, store, git, parts.publisher ?? new GhPullRequestPublisher(host)),
+      new CleanupPlanner(policy.limits, policy.order), writer, progress),
+    next: new NextBatch(store, git, parts.formatters, progress),
+    check: new CheckBatch(store, git, parts.sandbox, measure, new DiffClassifier(policy.patterns), fixLoop, mirror,
+      parts.gates, progress),
+    skip: new SkipBatch(store, git, fixLoop, progress),
+    finish: new FinishCleanup(folders, store, parts.gates, writer, fixLoop, git,
+      parts.publisher ?? new GhPullRequestPublisher(host), searchDocs, progress),
     status: new CleanupStatus(store),
   };
 }

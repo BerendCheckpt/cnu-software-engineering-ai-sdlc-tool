@@ -1,5 +1,6 @@
 import { appendFileSync } from "node:fs";
 import path from "node:path";
+import { DomainError } from "../../domain/errors.js";
 import type { IGitWorkspace, IProcessRunner } from "../../ports/services.js";
 
 const BRANCH = /^[A-Za-z0-9._/-]+$/;
@@ -7,22 +8,37 @@ const SHA = /^[0-9a-f]{7,40}$/;
 /** Tool output inside the workspace that must never end up in a commit. */
 const EXCLUDED = [".aisdlc/", ".scannerwork/", ".sonarqube/"];
 
+function alreadyThere(branch: string, where: string): string {
+  return `Branch ${branch} already exists ${where}: a clean-up or migration already ran on this data. ` +
+    "Merge or delete that branch first.";
+}
+
 /** The clean-up checkout, driven through git on the host with `execFile`. */
 export class GitWorkspace implements IGitWorkspace {
   constructor(private readonly runner: IProcessRunner) {}
 
-  async prepare(workspace: string, branch: string): Promise<{ baseBranch: string; baseSha: string }> {
+  async prepare(workspace: string, branch: string): Promise<{ baseBranch: string; baseSha: string; note?: string }> {
     if (!BRANCH.test(branch)) throw new Error(`Not a valid branch name: ${branch}`);
     // The workspace was cloned from the mirror; pushes go to the repository the mirror came from.
     const mirror = await this.git(workspace, "remote", "get-url", "origin");
     const upstream = await this.runner.run("git", ["remote", "get-url", "origin"], mirror);
-    if (upstream.exitCode === 0 && upstream.stdout.trim()) {
-      await this.git(workspace, "remote", "set-url", "origin", upstream.stdout.trim());
+    const hasUpstream = upstream.exitCode === 0 && Boolean(upstream.stdout.trim());
+    if (hasUpstream) await this.git(workspace, "remote", "set-url", "origin", upstream.stdout.trim());
+
+    // One branch per run, locally and on the remote. A branch that exists means the data was already worked on.
+    const local = await this.runner.run("git", ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], mirror);
+    if (local.exitCode === 0) throw new DomainError(alreadyThere(branch, "in the repository"));
+    let note: string | undefined;
+    if (hasUpstream) {
+      const remote = await this.runner.run("git", ["ls-remote", "--exit-code", "--heads", "origin", `refs/heads/${branch}`], workspace);
+      if (remote.exitCode === 0) throw new DomainError(alreadyThere(branch, "on the remote"));
+      if (remote.exitCode !== 2) note = `could not check whether ${branch} exists on the remote: ${remote.stderr.trim().split("\n")[0]}`;
     }
+
     const baseBranch = await this.git(workspace, "rev-parse", "--abbrev-ref", "HEAD");
     await this.git(workspace, "switch", "--quiet", "--create", branch);
     appendFileSync(path.join(workspace, ".git", "info", "exclude"), `\n${EXCLUDED.join("\n")}\n`);
-    return { baseBranch, baseSha: await this.head(workspace) };
+    return { baseBranch, baseSha: await this.head(workspace), ...(note ? { note } : {}) };
   }
 
   head(workspace: string): Promise<string> {

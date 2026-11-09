@@ -24,7 +24,12 @@ export function findingKey(f: Finding): string {
   return [f.source, f.rule, f.file, f.message].join("|");
 }
 
-/** Changes a human has to look at before they are committed. Decided from the diff, never by the model. */
+/** Security concerns for the PR: security findings, and vulnerable dependencies the audits reported. */
+export function isSecurityFinding(f: Finding): boolean {
+  return f.category === "security" || f.category === "dependency";
+}
+
+/** Changes the reviewer of the PR has to look at closely. Decided from the diff, never by the model. */
 export type Gate = "tests" | "dependency" | "security";
 
 export interface GateHit {
@@ -53,7 +58,7 @@ export interface Snapshot {
 
 export type BatchCategory = FindingCategory | "format";
 /** `escalated`: the model failed its checks too often; the change was reset and a human has the issue. */
-export type BatchStatus = "pending" | "in-progress" | "awaiting-approval" | "done" | "skipped" | "escalated";
+export type BatchStatus = "pending" | "in-progress" | "done" | "skipped" | "escalated";
 
 export interface BatchProps {
   runId: string;
@@ -64,12 +69,8 @@ export interface BatchProps {
   /** HEAD when the batch started; its diff is everything since, so a commit by the model cannot hide a change. */
   baseSha?: string;
   attempts: number;
+  /** What the committed diff touched that the PR's reviewer should look at closely. */
   gates: GateHit[];
-  /** The reviewed diff. A change after review needs a new check and a new approval. */
-  diffHash?: string;
-  approvalId?: string;
-  /** The measurement that becomes the run's reference once the batch is approved. */
-  candidate?: Snapshot;
   commitSha?: string;
   note?: string;
 }
@@ -94,12 +95,9 @@ export class CleanupBatch {
   get baseSha(): string | undefined { return this.props.baseSha; }
   get attempts(): number { return this.props.attempts; }
   get gates(): GateHit[] { return this.props.gates; }
-  get diffHash(): string | undefined { return this.props.diffHash; }
-  get approvalId(): string | undefined { return this.props.approvalId; }
-  get candidate(): Snapshot | undefined { return this.props.candidate; }
   get commitSha(): string | undefined { return this.props.commitSha; }
   get note(): string | undefined { return this.props.note; }
-  get isOpen(): boolean { return this.props.status === "in-progress" || this.props.status === "awaiting-approval"; }
+  get isOpen(): boolean { return this.props.status === "in-progress"; }
   get isFinished(): boolean {
     return this.props.status === "done" || this.props.status === "skipped" || this.props.status === "escalated";
   }
@@ -112,13 +110,7 @@ export class CleanupBatch {
 
   recordFailedCheck(): void {
     this.requireOpen();
-    this.props.status = "in-progress";
     this.props.attempts++;
-  }
-
-  awaitApproval(gates: GateHit[], diffHash: string, approvalId: string, candidate: Snapshot): void {
-    this.requireOpen();
-    Object.assign(this.props, { status: "awaiting-approval", gates, diffHash, approvalId, candidate });
   }
 
   complete(commitSha: string | undefined, gates: GateHit[] = this.props.gates): void {
@@ -176,10 +168,9 @@ export interface RunProps {
   branch: string;
   baseBranch: string;
   state: RunState;
-  planApprovalId?: string;
   /** The measurement before anything changed. */
   baseline: Snapshot;
-  /** The latest measurement a human accepted, directly or by approving a batch; each check is compared with it. */
+  /** The measurement after the last committed batch; each check is compared with it. */
   reference: Snapshot;
   pullRequest?: string;
   createdAt: string;
@@ -203,7 +194,6 @@ export class CleanupRun {
   get branch(): string { return this.props.branch; }
   get baseBranch(): string { return this.props.baseBranch; }
   get state(): RunState { return this.props.state; }
-  get planApprovalId(): string | undefined { return this.props.planApprovalId; }
   get baseline(): Snapshot { return this.props.baseline; }
   get reference(): Snapshot { return this.props.reference; }
   get pullRequest(): string | undefined { return this.props.pullRequest; }
@@ -220,10 +210,6 @@ export class CleanupRun {
     if (!states.includes(this.props.state)) {
       throw new DomainError(`Clean-up ${this.id} is ${this.props.state}; this needs ${states.join(" or ")}.`);
     }
-  }
-
-  awaitPlanApproval(approvalId: string): void {
-    this.props.planApprovalId = approvalId;
   }
 
   acceptMeasurement(snapshot: Snapshot): void {
@@ -243,7 +229,7 @@ export class CleanupRun {
 // ---------------------------------------------------------------------------------------------------------------
 
 export interface ComparisonOptions {
-  /** True when a human approved removing or rewriting tests, so fewer tests is not a problem. */
+  /** True when the diff was classified as a tests change, flagged for the reviewer, so fewer tests is not a problem. */
   fewerTestsApproved: boolean;
 }
 

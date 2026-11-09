@@ -5,13 +5,20 @@ import { DomainError } from "./errors.js";
 export const SEVERITIES = ["BLOCKER", "HIGH", "MEDIUM", "LOW", "INFO"] as const;
 export type Severity = (typeof SEVERITIES)[number];
 
-const LEGACY: Record<string, Severity> = { CRITICAL: "HIGH", MAJOR: "MEDIUM", MINOR: "LOW" };
+/** Older SonarQube severities, gitleaks' CRITICAL and npm audit's MODERATE, mapped to impact severities. */
+const LEGACY: Record<string, Severity> = { CRITICAL: "HIGH", MAJOR: "MEDIUM", MODERATE: "MEDIUM", MINOR: "LOW" };
 
-/** Maps any severity SonarQube reports, old or new, to an impact severity. Unknown values count as INFO. */
+/** Maps any severity a tool reports, old or new, to an impact severity. Unknown values count as INFO. */
 export function normalizeSeverity(severity: string): Severity {
   const upper = severity.trim().toUpperCase();
   if ((SEVERITIES as readonly string[]).includes(upper)) return upper as Severity;
   return LEGACY[upper] ?? "INFO";
+}
+
+/** Most severe first; findings of equal severity keep their order. */
+export function bySeverity<T extends { severity: string }>(items: T[]): T[] {
+  const rank = (s: string) => SEVERITIES.indexOf(normalizeSeverity(s));
+  return [...items].sort((a, b) => rank(a.severity) - rank(b.severity));
 }
 
 /** Which SonarQube findings stop a task, which are only reported, and how often the model may try again. */

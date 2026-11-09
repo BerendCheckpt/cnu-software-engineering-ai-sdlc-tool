@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { createInterface, type Interface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
+import { TerminalProgress } from "../../infrastructure/progress/progress.js";
 import type { App } from "../composition.js";
 import { COMMANDS, type ShellContext } from "./commands.js";
 import { dispatch, OPTION_NAMES, parse, usage } from "./dispatch.js";
@@ -12,7 +13,7 @@ const SUBCOMMANDS: Record<string, string[]> = {
   docs: ["list", "request", "search", "reindex"],
   cleanup: ["analyze", "next", "check", "skip", "status", "finish"],
   repo: ["add", "link", "unlink", "list"],
-  use: ["repo", "solution", "run"],
+  use: ["repo", "solution", "run", "session"],
 };
 
 const BUILT_INS = ["help", "use", "context", "exit", "quit"];
@@ -60,6 +61,8 @@ export interface ShellOptions {
   historyFile?: string;
   /** The folder the session was started in; a command that needs a repository and names none uses its repository. */
   cwd?: string;
+  /** Every command of this shell reports its steps to this session, for example the Claude Code session's name. */
+  session?: string;
 }
 
 /**
@@ -87,10 +90,13 @@ export class InteractiveShell {
       this.rl.prompt();
     });
     this.lines = this.rl[Symbol.asyncIterator]();
+    if (options.session) this.context.session = options.session;
   }
 
   async run(): Promise<void> {
     this.print("aisdlc interactive session. Type help for the commands, exit to leave.");
+    // Steps print here as they happen, so the person at this terminal sees the work live.
+    const detach = this.app.progress.attach(new TerminalProgress(this.output));
     try {
       for (;;) {
         const line = await this.read(this.promptText());
@@ -98,6 +104,7 @@ export class InteractiveShell {
         if (!(await this.handle(line))) break;
       }
     } finally {
+      detach();
       this.saveHistory();
       this.rl.close();
     }
@@ -119,7 +126,7 @@ export class InteractiveShell {
       case "quit":
         return false;
       case "help":
-        this.print([usage(), "", "  use repo|solution|run <value>             remember a value for the next commands",
+        this.print([usage(), "", "  use repo|solution|run|session <value>     remember a value for the next commands",
           "  context                                   show what is remembered", "  exit"].join("\n"));
         return true;
       case "context":
@@ -160,6 +167,7 @@ export class InteractiveShell {
       positionals.push(this.context.solution);
     }
     if (REPO_OPTION_COMMANDS.has(command) && !options.repo && this.context.repo) options.repo = this.context.repo;
+    if (!options.session && this.context.session) options.session = this.context.session;
     if (command === "cleanup") {
       if (positionals[0] === "analyze" && positionals.length === 1 && this.context.repo) positionals.push(this.context.repo);
       if (RUN_ACTIONS.has(positionals[0] ?? "") && positionals.length === 1 && this.context.run) positionals.push(this.context.run);
@@ -184,8 +192,8 @@ export class InteractiveShell {
 
   private use(words: string[]): void {
     const [key, value] = words;
-    if (key !== "repo" && key !== "solution" && key !== "run") {
-      this.print("Use: use repo|solution|run <value>");
+    if (key !== "repo" && key !== "solution" && key !== "run" && key !== "session") {
+      this.print("Use: use repo|solution|run|session <value>");
       return;
     }
     if (value) this.context[key] = value;

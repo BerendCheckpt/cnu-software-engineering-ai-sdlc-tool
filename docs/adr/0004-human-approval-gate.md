@@ -1,6 +1,6 @@
 # ADR 0004: Human approval gate for downloads, clones and crystallization
 
-- **Status:** Accepted. Extended by [ADR 0009](0009-cleanup-gates-from-the-diff.md): the clean-up adds `cleanup-plan`, `cleanup-change` and `push` approvals, and `approve` and `deny` now need an interactive terminal.
+- **Status:** Accepted. Extended by [ADR 0009](0009-cleanup-gates-from-the-diff.md): `approve` and `deny` need an interactive terminal. The clean-up's `cleanup-plan`, `cleanup-change` and `push` approvals were removed on 2026-11-09: the clean-up runs in automode and the pull request is the review.
 - **Date:** 2026-11-03
 
 ## Context

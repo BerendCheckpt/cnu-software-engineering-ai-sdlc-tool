@@ -103,8 +103,8 @@ export class CleanupRenderer {
       `Clean-up ${r.run.id}: ${r.batches.length} batches, ${r.run.baseline.findings.length} findings.`,
       ...r.run.baseline.gates.map((g) => `  ${g.kind}: ${g.skipped ? "skipped" : g.passed ? "passed" : "failed"}`),
       ...(r.run.baseline.limitations ?? []).map((l) => `  not covered: ${l}`),
-      `Plan: ${r.planPath}`,
-      `A human approves the plan: aisdlc approve ${r.approval.id}`,
+      `Branch: ${r.run.branch}. Plan: ${r.planPath}`,
+      `Next: aisdlc cleanup next ${r.run.id}`,
     ].join("\n");
   }
 
@@ -112,8 +112,6 @@ export class CleanupRenderer {
     switch (step.kind) {
       case "finished":
         return `All batches are handled. Next: aisdlc cleanup finish ${step.run.id}`;
-      case "waiting":
-        return `Batch ${step.batch.number} waits for a human: aisdlc approve ${step.batch.approvalId} (or deny). Stop here.`;
       case "formatted":
         return [`Batch ${step.batch.number}: ran ${step.applied.length ? step.applied.join(", ") : "no formatter (none applies)"}.`,
           `Next: aisdlc cleanup check ${step.run.id}`].join("\n");
@@ -131,7 +129,11 @@ export class CleanupRenderer {
   check(outcome: CheckOutcome, runId: string): string {
     switch (outcome.kind) {
       case "committed":
-        return `Batch ${outcome.batch.number} committed (${outcome.fixed} fixed). Next: aisdlc cleanup next ${runId}`;
+        return [`Batch ${outcome.batch.number} committed (${outcome.fixed} fixed).`,
+          ...(outcome.batch.gates.length
+            ? [`Flagged for the PR reviewer: ${outcome.batch.gates.map((g) => `${g.gate}: ${g.files.join(", ")}`).join("; ")}`]
+            : []),
+          `Next: aisdlc cleanup next ${runId}`].join("\n");
       case "nothing-changed":
         return `Batch ${outcome.batch.number} has no changes. Fix its findings, or: aisdlc cleanup skip ${runId} --reason "<why>"`;
       case "regression":
@@ -142,10 +144,6 @@ export class CleanupRenderer {
       case "escalated":
         return [`Batch ${outcome.batch.number} failed its checks too often: its change was reset and a human has it now.`,
           `Escalation: ${outcome.where}`, `Next: aisdlc cleanup next ${runId}`].join("\n");
-      case "awaiting-approval":
-        return [`Batch ${outcome.batch.number} needs a human before it is committed:`,
-          ...outcome.gates.map((g) => `  - ${g.gate}: ${g.files.join(", ")}`),
-          `A human decides: aisdlc approve ${outcome.approval.id} (or deny). Stop here.`].join("\n");
     }
   }
 

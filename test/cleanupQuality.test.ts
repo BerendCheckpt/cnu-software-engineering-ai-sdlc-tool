@@ -79,7 +79,6 @@ describe("the fix loop of a clean-up", () => {
   it("keeps a blocking batch open, refuses to skip it, escalates it, and finishes with the escalation listed", async () => {
     const analysis = await app.cleanup.analyze.execute("shop");
     const { run } = analysis;
-    app.cleanup.plan.accepted(app.decideApproval.approve(analysis.approval.id, "engineer"));
     expect((await app.cleanup.next.execute(run.id)).kind).toBe("formatted");
     expect((await app.cleanup.check.execute(run.id)).kind).toBe("committed");
 
@@ -113,7 +112,6 @@ describe("the fix loop of a clean-up", () => {
     start("[maintainability]");
     const analysis = await app.cleanup.analyze.execute("shop");
     const { run } = analysis;
-    app.cleanup.plan.accepted(app.decideApproval.approve(analysis.approval.id, "engineer"));
     await app.cleanup.next.execute(run.id);
     await app.cleanup.check.execute(run.id);
     await app.cleanup.next.execute(run.id);

@@ -20,6 +20,12 @@ export class SqliteCleanupStore implements ICleanupStore {
     return row ? CleanupRun.restore(JSON.parse(String(row.data)) as RunProps) : undefined;
   }
 
+  runOnBranch(repository: string, branch: string): CleanupRun | undefined {
+    const rows = this.db.prepare("SELECT data FROM cleanup_runs").all() as Row[];
+    return rows.map((r) => CleanupRun.restore(JSON.parse(String(r.data)) as RunProps))
+      .find((run) => run.repository === repository && run.branch === branch);
+  }
+
   saveBatch(batch: CleanupBatch): void {
     this.db
       .prepare(`INSERT INTO cleanup_batches (run_id, number, status, data) VALUES (?, ?, ?, ?)

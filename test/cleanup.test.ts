@@ -102,7 +102,7 @@ describe("ValidPr", () => {
     ]);
   });
 
-  it("allows fewer tests only after a human approved it", () => {
+  it("allows fewer tests only when the diff was a tests change, flagged for the reviewer", () => {
     const fewer = snapshot({ gates: [{ kind: "vitest", passed: true, skipped: false, tests: { total: 8, failed: 0, failing: [] } }] });
     expect(ValidPr.problems(snapshot(), fewer, { fewerTestsApproved: false })).toEqual(["vitest: 2 fewer tests than before"]);
     expect(ValidPr.problems(snapshot(), fewer, { fewerTestsApproved: true })).toEqual([]);

@@ -1,6 +1,7 @@
 # ADR 0009: Clean-up batches are judged by code, and gated from the diff
 
-- **Status:** Accepted
+- **Status:** Accepted. Amended 2026-11-09 (automode): gated diffs are committed and flagged in the PR instead of
+  waiting for an approval; the plan and the push need no approval; one branch per run, `cleanup/DD-MM-YYYY`.
 - **Date:** 2026-11-03
 
 ## Context

@@ -1,11 +1,13 @@
 import { parseArgs } from "node:util";
+import { newRunId } from "../../application/cleanup.js";
 import { DomainError } from "../../domain/errors.js";
+import { sessionName } from "../../domain/progress.js";
 import type { RepositoryEntry } from "../../domain/repository.js";
 import type { App } from "../composition.js";
 import { COMMANDS, type CommandResult, type ParsedArgs } from "./commands.js";
 
 const OPTIONS = ["prompt", "plan", "reason", "summary", "diff-file", "repo", "commit", "files", "pr", "by",
-  "framework", "version", "from", "to", "steps-file", "name"] as const;
+  "framework", "version", "from", "to", "steps-file", "name", "session"] as const;
 
 /** Every option the commands know, for completion. */
 export const OPTION_NAMES = [...OPTIONS, "all"].map((o) => `--${o}`);
@@ -26,8 +28,9 @@ export function parse(argv: string[]): { command?: string; args: ParsedArgs } {
 }
 
 export function usage(): string {
-  return ["Usage: aisdlc <command>, or aisdlc on its own for an interactive session", "",
-    ...COMMANDS.map((c) => `  ${c.usage}`)].join("\n");
+  return ["Usage: aisdlc <command> [--session <name>], or aisdlc on its own for an interactive session", "",
+    ...COMMANDS.map((c) => `  ${c.usage}`),
+    "  watch [<session>]                         follow a session's steps live (the latest one without a name)"].join("\n");
 }
 
 /** Asks a person a question at the terminal; undefined when there is no person to ask. */
@@ -52,14 +55,37 @@ export async function dispatch(
     const answer = await ask(`${command} ${describe(app, handler.name, args)}? [y/N] `);
     if (answer.trim().toLowerCase() !== "y") throw new CommandError("Nothing was changed.");
   }
-  const picked = cwd ? await pickRepository(app, command, args, cwd) : undefined;
-  const raw = await handler.run(app, args);
-  const result = typeof raw === "string" ? { text: raw } : raw;
-  if (!picked) return result;
-  return {
-    text: `using ${picked.kind === "mirror" ? "mirror" : "linked repository"} ${picked.name} (${picked.path})\n${result.text}`,
-    remember: { ...result.remember, repo: picked.name },
-  };
+  const session = beginSession(app, command, args);
+  try {
+    const picked = cwd ? await pickRepository(app, command, args, cwd) : undefined;
+    const raw = await handler.run(app, args);
+    const result = typeof raw === "string" ? { text: raw } : raw;
+    const header = [
+      ...(session ? [`session: ${session} (follow it with: aisdlc watch ${session})`] : []),
+      ...(picked ? [`using ${picked.kind === "mirror" ? "mirror" : "linked repository"} ${picked.name} (${picked.path})`] : []),
+    ];
+    return {
+      text: [...header, result.text].join("\n"),
+      ...(picked || result.remember ? { remember: { ...result.remember, ...(picked ? { repo: picked.name } : {}) } } : {}),
+    };
+  } catch (error) {
+    if (session) app.progress.emit(command, "failed", (error as Error).message.split("\n")[0]);
+    throw error;
+  }
+}
+
+/**
+ * Names the session of a clean-up command and points the steps at it: the name given with `--session` (a Claude
+ * Code session passes its own), or `cleanup-<run_id>-DD-MM-YYYY`. Other commands report no steps.
+ */
+function beginSession(app: App, command: string, args: ParsedArgs): string | undefined {
+  if (command !== "cleanup") return undefined;
+  const [action, runId] = args.positionals;
+  let id = action === "analyze" ? undefined : runId;
+  if (action === "analyze") id = args.options["run-id"] = newRunId();
+  const name = sessionName(command, { given: args.options.session, runId: id });
+  app.progress.begin(name);
+  return name;
 }
 
 /** The repository of the current folder, for a command that needs one and was given none. Linked once. */

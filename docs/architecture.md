@@ -114,24 +114,30 @@ versions (.NET 9 and 10). The walking skeleton builds plan generation, not execu
 
 The `aisdlc-cleanup` skill takes a repository to a pull request in small, checked batches
 ([ADR 0008](adr/0008-ephemeral-containers-for-gates.md), [ADR 0009](adr/0009-cleanup-gates-from-the-diff.md)).
+It runs in **automode**: no approval on the way, because the engineer reviews the pull request. Each run has one
+branch, `cleanup/DD-MM-YYYY`, locally and on the remote; a branch that already exists means the data was already
+cleaned up or migrated, and `analyze` refuses.
 
 ```mermaid
 flowchart TD
-  A[cleanup analyze] --> B["Baseline in containers: tests, Sonar scan, gitleaks, audits"]
+  A[cleanup analyze] --> BR{"cleanup/DD-MM-YYYY exists locally or on the remote?"}
+  BR -->|yes| STOP[refuse]
+  BR -->|no| B["Baseline in containers: tests, Sonar scan, gitleaks, audits"]
   B --> P[Plan: batches by category, at most 10 findings and 5 files each]
-  P --> HP{Human approves the plan}
-  HP -->|yes| F[Batch 0: formatters, no model]
+  P --> F[Batch 0: formatters, no model]
   F --> N[cleanup next: findings with code]
   N --> E[Claude fixes the batch in the workspace]
   E --> C["cleanup check: measure again, compare, classify the diff"]
   C -->|worse than before| E
-  C -->|tests, dependencies or security touched| HG{Human approves this exact diff}
-  HG -->|yes| CM[commit]
-  HG -->|no| RV[reset and skip] --> N
-  C -->|clean| CM --> N
-  N -->|all handled| FIN[cleanup finish: PR body, whole branch vs baseline]
-  FIN --> HPU{Human approves the push} -->|yes| PR[git push and gh pr create]
+  C -->|too many failed checks| ESC[reset, GitHub issue for a human] --> N
+  C -->|clean; tests, dependencies or security touched are flagged| CM[commit] --> N
+  N -->|all handled| FIN["cleanup finish: PR body (changelog by severity, security concerns), push, gh pr create"]
 ```
+
+Every step is reported to a **session**: `--session <name>` (Claude Code passes its own session name,
+`aisdlc-cleanup-DD-MM-YYYY`), or `cleanup-<run_id>-DD-MM-YYYY`. Steps print live on the terminal that runs the
+command and are appended to `work/sessions/<session>.jsonl`, which any listener can read; `aisdlc watch <session>`
+follows it from another terminal.
 
 Builds, tests and scans run in throw-away containers without network. Only restoring packages and the scanner
 reach out, and they get the SonarQube token by name, never in an argument. Git, the push and `gh` stay on the host
@@ -152,7 +158,7 @@ PR report is a fixed template. Neither needs a model.
 | Skill | For |
 |---|---|
 | `aisdlc-knowledge` | other engineers' Claude Code sessions: look up solutions, docs, where something was applied |
-| `aisdlc-cleanup` | clean up a repository into a PR, batch by batch, with human gates for tests, dependencies and security |
+| `aisdlc-cleanup` | clean up a repository into a PR in automode, batch by batch; tests, dependency and security changes are flagged in the PR |
 | `migrations/<from>-to-<to>` | crystallized migrations, written only after a human accepted an evaluated migration |
 
 | MCP tool | Returns (bounded) |
@@ -177,7 +183,8 @@ PR report is a fixed template. Neither needs a model.
 - **Approvals.** The model can create a request but no adapter it can reach can decide one. Only the CLI decides,
   and `approve` and `deny` need an interactive terminal and a confirmation, which an agent's tool call does not have.
 - **Clean-up gates.** A repository's own code runs only in containers with no network, a read-only root and no
-  capabilities. Which changes need a human is decided from the diff, and an approval covers one exact diff.
+  capabilities. Which changes the PR reviewer must look at closely is decided from the diff, never by the model, and
+  listed under Security concerns in the PR.
 
 ## Related documents
 
