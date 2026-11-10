@@ -14,7 +14,7 @@ Deterministic-first knowledge, migration planning and evaluation for coding task
 - **Fixed until clean.** A task is not done while a BLOCKER or HIGH SonarQube issue is open. The model gets up to
   three fix attempts after the first check; then a GitHub issue hands it to a human (ADR 0010).
 - **Clean-up.** A repository is cleaned up into a PR in small batches. Each batch is measured in throw-away containers,
-  It runs in automode on one branch, `cleanup/DD-MM-YYYY`, and ends in a PR whose body ranks the fixed findings by
+  It runs in automode on one branch, `cleanup/DD-MM-YYYY-HHmmss`, and ends in a PR whose body ranks the fixed findings by
   severity and lists every security concern. The PR is the review; no approval is asked on the way. Follow the steps
   live with `aisdlc watch [<session>]`.
 

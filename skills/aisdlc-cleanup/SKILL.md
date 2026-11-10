@@ -10,7 +10,7 @@ you make, commits the ones that pass, and at the end pushes one branch and opens
 the way: the engineer reviews the pull request.
 - **Measuring.** Builds, tests, the SonarQube scan, gitleaks and the dependency audits run in throw-away containers.
 - **The plan.** Findings are split into small batches, ordered security, bugs, dependencies, maintainability,
-  readability. One branch per run: `cleanup/DD-MM-YYYY`. If that branch already exists, a clean-up or migration
+  readability. One branch per run: `cleanup/DD-MM-YYYY-HHmmss`. If that branch already exists, a clean-up or migration
   already ran on this data and `analyze` refuses.
 - **Checking each batch.** The whole repository is measured again and compared with the last committed measurement.
   A batch that changes tests, dependencies or security-sensitive code is committed and flagged in the PR.
@@ -25,11 +25,11 @@ Output is short by design; act on what it says. Steps are also printed live on s
 
 ## Session
 
-Name this Claude Code session `aisdlc-cleanup-<DD-MM-YYYY>` (today's date; set it as the session title when you can).
+Name this Claude Code session `aisdlc-cleanup-<DD-MM-YYYY-HHmmss>` (the current local time; set it as the session title when you can).
 Pass that name with `--session <name>` on **every** aisdlc command, so all steps land in one session log. At the start,
 tell the engineer they can follow every step live in their own terminal with:
 
-    aisdlc watch aisdlc-cleanup-<DD-MM-YYYY>
+    aisdlc watch aisdlc-cleanup-<DD-MM-YYYY-HHmmss>
 
 ## Steps
 
@@ -53,7 +53,7 @@ tell the engineer they can follow every step live in their own terminal with:
       - **escalated**: the batch failed too often. Its change was reset and a GitHub issue was opened for a human.
         Note the link for the engineer; the output already shows the next batch.
    Stop when the output says all batches are handled. `skip` also prints the next batch.
-4. **Finish.** `aisdlc cleanup finish <run> --session <name>` pushes `cleanup/DD-MM-YYYY` and opens the pull request.
+4. **Finish.** `aisdlc cleanup finish <run> --session <name>` pushes `cleanup/DD-MM-YYYY-HHmmss` and opens the pull request.
    Give the engineer the PR link and the top of its changelog and security concerns. If the push or the PR failed,
    run `finish` again: it retries from the push.
 

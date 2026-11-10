@@ -1,20 +1,20 @@
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { CleanupBatch, CleanupRun, type Finding } from "../src/domain/cleanup.js";
-import { dayStamp, sessionName } from "../src/domain/progress.js";
+import { timeStamp, sessionName } from "../src/domain/progress.js";
 import { bySeverity } from "../src/domain/quality.js";
 import { ProgressHub, SessionLog, TerminalProgress } from "../src/infrastructure/progress/progress.js";
 import { CleanupReportWriter } from "../src/infrastructure/reporting/cleanupReportWriter.js";
 import { tempDir } from "./helpers.js";
 
 describe("session names", () => {
-  const now = new Date(2026, 10, 9);
+  const now = new Date(2026, 10, 9, 8, 5, 3);
 
-  it("uses the given name, else <command>-<run_id>-DD-MM-YYYY, else <command>-DD-MM-YYYY", () => {
-    expect(dayStamp(now)).toBe("09-11-2026");
+  it("uses the given name, else <command>-<run_id>-DD-MM-YYYY-HHmmss, else <command>-DD-MM-YYYY-HHmmss", () => {
+    expect(timeStamp(now)).toBe("09-11-2026-080503");
     expect(sessionName("cleanup", { given: "aisdlc-cleanup-09-11-2026", runId: "6ad39600" }, now)).toBe("aisdlc-cleanup-09-11-2026");
-    expect(sessionName("cleanup", { runId: "6ad39600" }, now)).toBe("cleanup-6ad39600-09-11-2026");
-    expect(sessionName("docs", {}, now)).toBe("docs-09-11-2026");
+    expect(sessionName("cleanup", { runId: "6ad39600" }, now)).toBe("cleanup-6ad39600-09-11-2026-080503");
+    expect(sessionName("docs", {}, now)).toBe("docs-09-11-2026-080503");
     expect(() => sessionName("cleanup", { given: "../evil" }, now)).toThrow(/Not a valid session name/);
   });
 });
