@@ -248,11 +248,15 @@ export const COMMANDS: CliCommand[] = [
         }
         case "next":
           return cleanupRenderer.next(await app.cleanup.next.execute(run()));
-        case "check":
-          return cleanupRenderer.check(await app.cleanup.check.execute(run()), run());
+        case "check": {
+          // A batch that is done starts the next one right away, which saves the caller a round trip.
+          const outcome = await app.cleanup.check.execute(run());
+          const done = outcome.kind === "committed" || outcome.kind === "escalated";
+          return cleanupRenderer.check(outcome, run(), done ? await app.cleanup.next.execute(run()) : undefined);
+        }
         case "skip": {
           const batch = await app.cleanup.skip.execute(run(), required(args, "reason"));
-          return `Batch ${batch.number} skipped. Next: aisdlc cleanup next ${batch.runId}`;
+          return `Batch ${batch.number} skipped.\n${cleanupRenderer.next(await app.cleanup.next.execute(run()))}`;
         }
         case "status": {
           const { run: current, batches } = app.cleanup.status.execute(run());

@@ -100,7 +100,7 @@ there are uncommitted changes that the copy does not contain. A clean-up's push 
 | From | How |
 |---|---|
 | A Claude Code session | the [`aisdlc-knowledge` skill](skills/aisdlc-knowledge/SKILL.md), or the MCP server through `.mcp.json` |
-| A Claude Code session, to clean up a repository | the [`aisdlc-cleanup` skill](skills/aisdlc-cleanup/SKILL.md) |
+| A Claude Code session, to clean up a repository | the [`aisdlc-cleanup` skill](skills/aisdlc-cleanup/SKILL.md), with its batch loop in the [`aisdlc-cleanup-batches` subagent](agents/aisdlc-cleanup-batches.md) (link it into `~/.claude/agents/`) |
 | cnu-claude-agent (benchmarks, local models) | `npm run gateway` in front of it, unchanged; see the [integration notes](docs/integration-cnu-claude-agent.md) |
 
 ## Layout

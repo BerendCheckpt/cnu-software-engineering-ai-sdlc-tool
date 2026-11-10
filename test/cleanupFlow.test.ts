@@ -219,6 +219,27 @@ describe("clean-up flow", () => {
     expect(existsSync(path.join(run.workspace, ".aisdlc", "vitest.json"))).toBe(true);
   });
 
+  it("starts the next batch from the CLI as soon as check commits or skip throws a batch away", async () => {
+    const cli = async (...words: string[]) => (await dispatch(app, "cleanup", parse(["cleanup", ...words]).args, undefined)).text;
+    const runId = (await dispatch(app, "cleanup", parse(["cleanup", "analyze", "shop"]).args, undefined)).remember!.run!;
+    const workspace = app.cleanup.status.execute(runId).run.workspace;
+
+    await cli("next", runId);
+    const afterFormat = await cli("check", runId);
+    expect(afterFormat).toContain("Batch 0 committed");
+    expect(afterFormat).toMatch(/Batch 1 \(maintainability\), 1 findings[\s\S]*src\/calc\.ts:1[\s\S]*When done: aisdlc cleanup check/);
+    expect(afterFormat).not.toContain(`Next: aisdlc cleanup next ${runId}`);
+
+    edit(workspace, "src/calc.ts", (t) => t.replace("add", "plus"));
+    const afterSkip = await cli("skip", runId, "--reason", "needs a product decision");
+    expect(afterSkip).toMatch(/^[\s\S]*Batch 1 skipped\.\nBatch 2 \(maintainability\)/);
+
+    edit(workspace, "src/calc.ts", (t) => t.replace("a - b; // TODO rename", "a - b;"));
+    expect(await cli("check", runId)).toContain("Batch 3 (maintainability)");
+    edit(workspace, "src/calc.ts", (t) => t.replace("a * b; // TODO rename", "a * b;"));
+    expect(await cli("check", runId)).toContain(`All batches are handled. Next: aisdlc cleanup finish ${runId}`);
+  }, 30_000);
+
   it("skips a batch by throwing its changes away", async () => {
     const { run } = await app.cleanup.analyze.execute("shop");
     await app.cleanup.next.execute(run.id);
