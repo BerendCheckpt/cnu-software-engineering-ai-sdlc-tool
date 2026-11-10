@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { DomainError } from "./errors.js";
 
-export type ApprovalKind = "download" | "clone" | "crystallize" | "cleanup-plan" | "cleanup-change" | "push";
+/** The clean-up needs none: it runs in automode and the pull request is the review. */
+export type ApprovalKind = "download" | "clone" | "crystallize";
 export type ApprovalStatus = "pending" | "approved" | "denied" | "executed";
 
 export interface ApprovalProps {

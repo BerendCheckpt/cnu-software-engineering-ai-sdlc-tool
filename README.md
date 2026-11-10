@@ -14,7 +14,9 @@ Deterministic-first knowledge, migration planning and evaluation for coding task
 - **Fixed until clean.** A task is not done while a BLOCKER or HIGH SonarQube issue is open. The model gets up to
   three fix attempts after the first check; then a GitHub issue hands it to a human (ADR 0010).
 - **Clean-up.** A repository is cleaned up into a PR in small batches. Each batch is measured in throw-away containers,
-  and a human approves the plan, every change to tests, dependencies or security-sensitive code, and the push.
+  It runs in automode on one branch, `cleanup/DD-MM-YYYY`, and ends in a PR whose body ranks the fixed findings by
+  severity and lists every security concern. The PR is the review; no approval is asked on the way. Follow the steps
+  live with `aisdlc watch [<session>]`.
 
 Read [docs/architecture.md](docs/architecture.md) first, then the [ADRs](docs/adr) and the
 [entity model](docs/entities.md).
@@ -76,7 +78,7 @@ The first time, the folder is linked under its own name; `aisdlc repo link <fold
 
 aisdlc only reads a linked folder. Builds, tests, migrations and clean-ups run on a copy of the last commit of the
 branch you have checked out, under `work/`. Your branch and uncommitted files stay as they are, and the CLI says when
-there are uncommitted changes that the copy does not contain. A clean-up's approved push goes to the folder's own
+there are uncommitted changes that the copy does not contain. A clean-up's push goes to the folder's own
 `origin`.
 
 ## Configuration

@@ -1,21 +1,21 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { Approval } from "../domain/approval.js";
 import {
-  CleanupBatch, CleanupRun, findingKey, ValidPr, type GateHit, type GateSnapshot, type Snapshot,
+  CleanupBatch, CleanupRun, findingKey, isSecurityFinding, ValidPr, type GateSnapshot, type Snapshot,
 } from "../domain/cleanup.js";
 import type { CleanupPlanner } from "../domain/cleanupPlanner.js";
 import type { DiffClassifier } from "../domain/diffClassifier.js";
 import { DomainError } from "../domain/errors.js";
 import type { EvaluationResult } from "../domain/evaluation.js";
 import { PathGuard } from "../domain/pathGuard.js";
+import { dayStamp } from "../domain/progress.js";
 import type {
-  ICleanupGateFactory, ICleanupReportWriter, IDependencyRestorer, IFormatter, IGitWorkspace, IPullRequestPublisher,
-  IRepoMirror, ISandbox,
+  DocReference, ICleanupGateFactory, ICleanupReportWriter, IDependencyRestorer, IFormatter, IGitWorkspace, IProgress,
+  IPullRequestPublisher, IRepoMirror, ISandbox,
 } from "../ports/services.js";
-import type { IApprovalStore, ICleanupStore } from "../ports/stores.js";
-import type { RequestApproval } from "./approvals.js";
+import type { ICleanupStore } from "../ports/stores.js";
+import type { SearchDocs } from "./docs.js";
 import { runGates } from "./evaluation.js";
 import { withCode, type FindingWithCode } from "./snippets.js";
 import type { SonarFixLoop } from "./sonarFixLoop.js";
@@ -38,14 +38,25 @@ export class CleanupFolders {
 
 /** Restores packages, runs every gate in parallel, then collects findings. No model involved. */
 export class MeasureWorkspace {
-  constructor(private readonly restorer: IDependencyRestorer, private readonly gates: ICleanupGateFactory) {}
+  constructor(
+    private readonly restorer: IDependencyRestorer,
+    private readonly gates: ICleanupGateFactory,
+    private readonly progress: IProgress,
+  ) {}
 
   async execute(runId: string, workspace: string): Promise<Snapshot> {
     mkdirSync(path.join(workspace, ".aisdlc"), { recursive: true });
+    this.progress.emit("restore packages", "started");
     await this.restorer.restore(workspace);
+    this.progress.emit("restore packages", "done");
     const { evaluators, findingSources } = this.gates.forRun(runId);
     // Findings are read after the gates, because the SonarQube issues come from the scan the gates just ran.
+    this.progress.emit("gates", "started", evaluators.map((e) => e.kind).join(", ") || "none");
     const results = await runGates(evaluators, workspace);
+    for (const r of results) {
+      this.progress.emit(`gate ${r.kind}`, r.isSkipped ? "info" : r.passed ? "done" : "failed", r.isSkipped ? "skipped" : r.digest);
+    }
+    this.progress.emit("findings", "started", findingSources.map((s) => s.name).join(", ") || "none");
     const findings = await Promise.all(findingSources.map(async (source) => {
       try {
         return await source.collect(workspace);
@@ -55,6 +66,7 @@ export class MeasureWorkspace {
       }
     }));
     const limitations = findingSources.flatMap((s) => s.limitations?.() ?? []);
+    this.progress.emit("findings", "done", `${findings.flat().length} open`);
     return { gates: results.map(toGateSnapshot), findings: findings.flat(), ...(limitations.length ? { limitations } : {}) };
   }
 }
@@ -75,10 +87,17 @@ export interface AnalysisResult {
   run: CleanupRun;
   batches: CleanupBatch[];
   planPath: string;
-  approval: Approval;
 }
 
-/** Copies a mirror into a workspace, measures it and writes a plan that waits for a human. */
+/** A new run id: it names the workspace, the session and the SonarQube project. */
+export function newRunId(): string {
+  return randomBytes(4).toString("hex");
+}
+
+/**
+ * Copies a mirror into a workspace on the run's one branch, `cleanup/DD-MM-YYYY`, measures it and writes the plan.
+ * The plan starts right away (automode): the pull request is where a human reviews the result.
+ */
 export class AnalyzeRepository {
   constructor(
     private readonly folders: CleanupFolders,
@@ -89,56 +108,40 @@ export class AnalyzeRepository {
     private readonly measure: MeasureWorkspace,
     private readonly planner: CleanupPlanner,
     private readonly writer: ICleanupReportWriter,
-    private readonly requestApproval: RequestApproval,
+    private readonly progress: IProgress,
   ) {}
 
-  async execute(repository: string): Promise<AnalysisResult> {
+  async execute(repository: string, id = newRunId(), now = new Date()): Promise<AnalysisResult> {
     if (!this.mirror.exists(repository)) {
       throw new DomainError(`No mirror or linked folder ${repository}. Link a folder you pulled with: repo link <folder>, ` +
         "or request a clone with: repo add <https-url>");
     }
+    const branch = `cleanup/${dayStamp(now)}`;
+    const earlier = this.store.runOnBranch(repository, branch);
+    if (earlier) {
+      throw new DomainError(`Clean-up ${earlier.id} already ran on ${repository} as branch ${branch}: ` +
+        "a clean-up or migration already took place on this data.");
+    }
     await this.sandbox.ensureAvailable();
 
-    const id = randomBytes(4).toString("hex");
+    this.progress.emit("checkout", "started", repository);
     const workspace = this.folders.workspace(id);
     await this.mirror.checkout(repository, workspace);
-    const branch = `aisdlc/cleanup-${id}`;
-    const { baseBranch } = await this.git.prepare(workspace, branch);
-    const baseline = await this.measure.execute(id, workspace);
+    const { baseBranch, note } = await this.git.prepare(workspace, branch);
+    this.progress.emit("checkout", "done", `${branch} from ${baseBranch}`);
+    if (note) this.progress.emit("checkout", "info", note);
+    const measured = await this.measure.execute(id, workspace);
+    const baseline = note ? { ...measured, limitations: [...measured.limitations ?? [], note] } : measured;
 
     const run = CleanupRun.start({ id, repository, workspace, branch, baseBranch, baseline });
+    run.moveTo("accepted");
     const batches = this.planner.plan(id, baseline.findings);
-    const approval = this.requestApproval.execute("cleanup-plan", id,
-      `clean up ${repository}: ${batches.length} batches, ${baseline.findings.length} findings`);
-    run.awaitPlanApproval(approval.id);
-
     this.store.saveRun(run);
     for (const batch of batches) this.store.saveBatch(batch);
     const planPath = this.folders.plan(id);
     writeFileSync(planPath, this.writer.plan(run, batches), "utf8");
-    return { run, batches, planPath, approval };
-  }
-}
-
-/** What happens to a plan once a human decided on it. Called by the CLI's approve and deny, never by a model. */
-export class DecideCleanupPlan {
-  constructor(private readonly approvals: IApprovalStore, private readonly store: ICleanupStore) {}
-
-  accepted(approval: Approval): CleanupRun {
-    approval.ensureApprovedFor("cleanup-plan");
-    const run = requireRun(this.store, approval.target);
-    run.moveTo("accepted");
-    approval.consume("cleanup-plan");
-    this.store.saveRun(run);
-    this.approvals.save(approval);
-    return run;
-  }
-
-  denied(approval: Approval): CleanupRun {
-    const run = requireRun(this.store, approval.target);
-    run.moveTo("abandoned");
-    this.store.saveRun(run);
-    return run;
+    this.progress.emit("plan", "done", `${batches.length} batches, ${baseline.findings.length} findings`);
+    return { run, batches, planPath };
   }
 }
 
@@ -147,7 +150,6 @@ export class DecideCleanupPlan {
 export type NextStep =
   | { kind: "work"; run: CleanupRun; batch: CleanupBatch; findings: FindingWithCode[] }
   | { kind: "formatted"; run: CleanupRun; batch: CleanupBatch; applied: string[] }
-  | { kind: "waiting"; run: CleanupRun; batch: CleanupBatch }
   | { kind: "finished"; run: CleanupRun };
 
 /** Starts the next batch, or returns the one still open. The formatting batch runs its tools here, without a model. */
@@ -156,6 +158,7 @@ export class NextBatch {
     private readonly store: ICleanupStore,
     private readonly git: IGitWorkspace,
     private readonly formatters: IFormatter[],
+    private readonly progress: IProgress,
   ) {}
 
   async execute(runId: string): Promise<NextStep> {
@@ -164,14 +167,19 @@ export class NextBatch {
     const batches = this.store.batches(runId);
 
     const open = batches.find((b) => b.isOpen);
-    if (open) return open.status === "awaiting-approval" ? { kind: "waiting", run, batch: open } : this.work(run, open);
+    if (open) return this.work(run, open);
 
     const next = batches.find((b) => b.status === "pending");
-    if (!next) return { kind: "finished", run };
+    if (!next) {
+      this.progress.emit("batches", "done", "all handled");
+      return { kind: "finished", run };
+    }
     next.start(await this.git.head(run.workspace));
     run.moveTo("in-progress");
     this.store.saveBatch(next);
     this.store.saveRun(run);
+    this.progress.emit(`batch ${next.number}`, "started",
+      `${next.category}, ${next.findings.length} findings (${next.number} of ${batches.length - 1})`);
 
     if (next.category !== "format") return this.work(run, next);
     const applied: string[] = [];
@@ -196,8 +204,7 @@ export type CheckOutcome =
     kind: "regression"; batch: CleanupBatch; problems: string[]; open: FindingWithCode[];
     failures: number; maxFixAttempts: number;
   }
-  | { kind: "escalated"; batch: CleanupBatch; where: string }
-  | { kind: "awaiting-approval"; batch: CleanupBatch; gates: GateHit[]; approval: Approval };
+  | { kind: "escalated"; batch: CleanupBatch; where: string };
 
 /** `cleanup:<runId>#<batch>`: the fix loop of one batch. */
 export function batchSubject(batch: CleanupBatch): string {
@@ -205,9 +212,9 @@ export function batchSubject(batch: CleanupBatch): string {
 }
 
 /**
- * Measures the open batch and decides what happens to it: committed, sent back to the model, escalated to a
- * human after too many failed checks (ADR 0010), or held for a human because the diff touches tests, dependencies
- * or security-sensitive code.
+ * Measures the open batch and decides what happens to it: committed, sent back to the model, or escalated to a
+ * human after too many failed checks (ADR 0010). A diff that touches tests, dependencies or security-sensitive code
+ * is committed too, with what it touched kept on the batch, so the PR flags it for the reviewer.
  */
 export class CheckBatch {
   constructor(
@@ -216,10 +223,10 @@ export class CheckBatch {
     private readonly sandbox: ISandbox,
     private readonly measure: MeasureWorkspace,
     private readonly classifier: DiffClassifier,
-    private readonly requestApproval: RequestApproval,
     private readonly fixLoop: SonarFixLoop,
     private readonly mirror: IRepoMirror,
     private readonly gates: ICleanupGateFactory,
+    private readonly progress: IProgress,
   ) {}
 
   async execute(runId: string): Promise<CheckOutcome> {
@@ -227,16 +234,23 @@ export class CheckBatch {
     run.requireState("in-progress");
     const batch = this.store.batches(runId).find((b) => b.isOpen);
     if (!batch?.baseSha) throw new DomainError("No batch is open. Start one with: cleanup next");
+    const step = `check batch ${batch.number}`;
+    this.progress.emit(step, "started", batch.category);
 
     const diff = await this.git.diffSince(run.workspace, batch.baseSha);
     if (!diff.trim()) {
-      if (batch.category !== "format") return { kind: "nothing-changed", batch };
+      if (batch.category !== "format") {
+        this.progress.emit(step, "info", "nothing changed");
+        return { kind: "nothing-changed", batch };
+      }
       batch.complete(undefined, []);
       this.store.saveBatch(batch);
+      this.progress.emit(step, "done", "nothing to format");
       return { kind: "committed", batch, fixed: 0 };
     }
 
     await this.sandbox.ensureAvailable();
+    // Tests, dependencies or security-sensitive code: not a stop, but flagged in the PR for the reviewer.
     const gates = this.classifier.classify(diff, batch.category);
     const current = await this.measure.execute(run.id, run.workspace);
     const problems = ValidPr.problems(run.reference, current,
@@ -265,79 +279,28 @@ export class CheckBatch {
       await this.git.resetTo(run.workspace, batch.baseSha);
       batch.escalate(loop.where);
       this.store.saveBatch(batch);
+      this.progress.emit(step, "failed", `escalated: ${loop.where}`);
       return { kind: "escalated", batch, where: loop.where };
     }
     if (loop.kind === "fix-required") {
       batch.recordFailedCheck();
       this.store.saveBatch(batch);
+      this.progress.emit(step, "failed", `attempt ${loop.failures} of ${loop.maxFixAttempts}: ` +
+        [...problems, ...open.map((f) => `${f.rule} still open`)].slice(0, 3).join("; "));
       return {
         kind: "regression", batch, problems, open: withCode(run.workspace, open),
         failures: loop.failures, maxFixAttempts: loop.maxFixAttempts,
       };
     }
 
-    if (gates.length) {
-      const hash = diffHash(diff);
-      // The hash is part of the target: an edited diff is a different change and needs its own approval.
-      const approval = this.requestApproval.execute("cleanup-change", `${run.id}#${batch.number}@${hash.slice(0, 12)}`,
-        `batch ${batch.number} (${batch.category}) changes ${gates.map((g) => `${g.gate}: ${g.files.join(", ")}`).join("; ")}`);
-      batch.awaitApproval(gates, hash, approval.id, current);
-      this.store.saveBatch(batch);
-      return { kind: "awaiting-approval", batch, gates, approval };
-    }
-
     const fixed = ValidPr.fixed(run.reference, current).length;
-    batch.complete(await this.git.commit(run.workspace, commitMessage(batch, fixed)), []);
+    batch.complete(await this.git.commit(run.workspace, commitMessage(batch, fixed)), gates);
     run.acceptMeasurement(current);
     this.store.saveBatch(batch);
     this.store.saveRun(run);
+    this.progress.emit(step, "done", `committed, ${fixed} fixed` +
+      (gates.length ? `; flagged for review: ${gates.map((g) => g.gate).join(", ")}` : ""));
     return { kind: "committed", batch, fixed };
-  }
-}
-
-/** A human's decision on a gated batch. Called by the CLI's approve and deny, never by a model. */
-export class DecideCleanupChange {
-  constructor(
-    private readonly approvals: IApprovalStore,
-    private readonly store: ICleanupStore,
-    private readonly git: IGitWorkspace,
-  ) {}
-
-  async accepted(approval: Approval): Promise<CleanupBatch> {
-    approval.ensureApprovedFor("cleanup-change");
-    const { run, batch } = this.batchOf(approval);
-    const diff = await this.git.diffSince(run.workspace, batch.baseSha!);
-    if (diffHash(diff) !== batch.diffHash) {
-      throw new DomainError(`Batch ${batch.number} changed after it was checked. Run cleanup check again; ` +
-        "the new change needs its own approval.");
-    }
-    const fixed = ValidPr.fixed(run.reference, batch.candidate!).length;
-    batch.complete(await this.git.commit(run.workspace, commitMessage(batch, fixed)));
-    run.acceptMeasurement(batch.candidate!);
-    approval.consume("cleanup-change");
-    this.store.saveBatch(batch);
-    this.store.saveRun(run);
-    this.approvals.save(approval);
-    return batch;
-  }
-
-  async denied(approval: Approval): Promise<CleanupBatch> {
-    const { run, batch } = this.batchOf(approval);
-    await this.git.resetTo(run.workspace, batch.baseSha!);
-    batch.skip(`denied by ${approval.toProps().decidedBy ?? "a human"}`);
-    this.store.saveBatch(batch);
-    return batch;
-  }
-
-  private batchOf(approval: Approval): { run: CleanupRun; batch: CleanupBatch } {
-    const target = /^([0-9a-f]+)#(\d+)@/.exec(approval.target);
-    if (!target) throw new DomainError(`Approval ${approval.id} is not for a clean-up batch.`);
-    const run = requireRun(this.store, target[1]!);
-    const batch = this.store.batches(run.id).find((b) => b.number === Number(target[2]));
-    if (!batch || batch.approvalId !== approval.id || batch.status !== "awaiting-approval") {
-      throw new DomainError(`Batch ${target[2]} of ${run.id} is not waiting for approval ${approval.id}.`);
-    }
-    return { run, batch };
   }
 }
 
@@ -347,6 +310,7 @@ export class SkipBatch {
     private readonly store: ICleanupStore,
     private readonly git: IGitWorkspace,
     private readonly fixLoop: SonarFixLoop,
+    private readonly progress: IProgress,
   ) {}
 
   async execute(runId: string, reason: string): Promise<CleanupBatch> {
@@ -361,27 +325,57 @@ export class SkipBatch {
     batch.skip(reason);
     await this.git.resetTo(run.workspace, batch.baseSha);
     this.store.saveBatch(batch);
+    this.progress.emit(`batch ${batch.number}`, "info", `skipped: ${reason}`);
     return batch;
   }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
 
-/** Checks the whole branch against the baseline, writes the PR body and asks a human for permission to push. */
+export interface FinishResult {
+  reportPath: string;
+  pullRequest: string;
+  note?: string;
+}
+
+/**
+ * Checks the whole branch against the baseline, writes the PR body, pushes the run's one branch and opens the pull
+ * request (automode: the PR is the review). After a failed push or PR, running it again retries from the push.
+ */
 export class FinishCleanup {
   constructor(
     private readonly folders: CleanupFolders,
     private readonly store: ICleanupStore,
     private readonly gates: ICleanupGateFactory,
     private readonly writer: ICleanupReportWriter,
-    private readonly requestApproval: RequestApproval,
     private readonly fixLoop: SonarFixLoop,
+    private readonly git: IGitWorkspace,
+    private readonly publisher: IPullRequestPublisher,
+    private readonly searchDocs: SearchDocs,
+    private readonly progress: IProgress,
   ) {}
 
-  async execute(runId: string): Promise<{ reportPath: string; approval: Approval; note?: string }> {
+  async execute(runId: string): Promise<FinishResult> {
     const run = requireRun(this.store, runId);
-    run.requireState("in-progress");
-    const batches = this.store.batches(runId);
+    run.requireState("in-progress", "ready");
+    const note = run.state === "in-progress" ? await this.prepare(run) : undefined;
+
+    const reportPath = this.folders.report(run.id);
+    this.progress.emit("push", "started", run.branch);
+    await this.git.push(run.workspace, run.branch);
+    this.progress.emit("push", "done", run.branch);
+    this.progress.emit("pull request", "started", `into ${run.baseBranch}`);
+    const pullRequest = await this.publisher.open(run.workspace, run.branch, run.baseBranch,
+      `Clean-up of ${run.repository}`, reportPath);
+    run.published(pullRequest);
+    this.store.saveRun(run);
+    this.progress.emit("pull request", "done", pullRequest);
+    return { reportPath, pullRequest, ...(note ? { note } : {}) };
+  }
+
+  /** Validates the branch and writes the PR body; the run is then ready to push. */
+  private async prepare(run: CleanupRun): Promise<string | undefined> {
+    const batches = this.store.batches(run.id);
     const unfinished = batches.filter((b) => !b.isFinished);
     if (unfinished.length) {
       throw new DomainError(`Batches ${unfinished.map((b) => `${b.number} (${b.status})`).join(", ")} are not finished.`);
@@ -401,38 +395,23 @@ export class FinishCleanup {
     if (problems.length) throw new DomainError(`Not a valid PR: ${problems.join("; ")}`);
 
     const reportPath = this.folders.report(run.id);
-    writeFileSync(reportPath, this.writer.report(run, batches), "utf8");
+    writeFileSync(reportPath, this.writer.report(run, batches, this.docReferences(run)), "utf8");
+    this.progress.emit("report", "done", reportPath);
     const note = await this.gates.forRun(run.id).release();
     run.moveTo("ready");
-    const approval = this.requestApproval.execute("push", run.id,
-      `push ${run.branch} and open a pull request into ${run.baseBranch} of ${run.repository}`);
     this.store.saveRun(run);
-    return { reportPath, approval, ...(note ? { note } : {}) };
+    return note;
   }
-}
 
-/** Pushes the branch and opens the PR, once, after a human approved it. A failure can be retried. */
-export class PublishCleanup {
-  constructor(
-    private readonly folders: CleanupFolders,
-    private readonly approvals: IApprovalStore,
-    private readonly store: ICleanupStore,
-    private readonly git: IGitWorkspace,
-    private readonly publisher: IPullRequestPublisher,
-  ) {}
-
-  async execute(approval: Approval): Promise<string> {
-    approval.ensureApprovedFor("push");
-    const run = requireRun(this.store, approval.target);
-    run.requireState("ready");
-    await this.git.push(run.workspace, run.branch);
-    const pullRequest = await this.publisher.open(run.workspace, run.branch, run.baseBranch,
-      `Clean-up of ${run.repository}`, this.folders.report(run.id));
-    approval.consume("push");
-    run.published(pullRequest);
-    this.store.saveRun(run);
-    this.approvals.save(approval);
-    return pullRequest;
+  /** For every security rule, the best matching section of the pulled official docs, if there is one. */
+  private docReferences(run: CleanupRun): Map<string, DocReference> {
+    const references = new Map<string, DocReference>();
+    for (const f of run.baseline.findings.filter(isSecurityFinding)) {
+      if (references.has(f.rule)) continue;
+      const top = this.searchDocs.execute(`${f.rule} ${f.message}`.slice(0, 300))[0];
+      if (top) references.set(f.rule, { heading: top.heading, url: top.url });
+    }
+    return references;
   }
 }
 
@@ -452,10 +431,6 @@ function requireRun(store: ICleanupStore, id: string): CleanupRun {
 
 function sonarLink(url: string | undefined): { sonarProjectUrl?: string } {
   return url ? { sonarProjectUrl: url } : {};
-}
-
-function diffHash(diff: string): string {
-  return createHash("sha256").update(diff).digest("hex");
 }
 
 function commitMessage(batch: CleanupBatch, fixed: number): string {

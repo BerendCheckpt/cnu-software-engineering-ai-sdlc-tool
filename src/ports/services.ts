@@ -2,6 +2,7 @@ import type { CleanupBatch, CleanupRun, Finding } from "../domain/cleanup.js";
 import type { DocSource } from "../domain/docs.js";
 import type { EvaluationKind, EvaluationResult } from "../domain/evaluation.js";
 import type { CodeLocation, MigrationPath, MigrationSkill } from "../domain/migration.js";
+import type { StepEvent, StepStatus } from "../domain/progress.js";
 import type { FixLoop } from "../domain/quality.js";
 import type { RepositoryEntry } from "../domain/repository.js";
 import type { Solution } from "../domain/solution.js";
@@ -153,10 +154,24 @@ export interface ICleanupGateFactory {
   forRun(id: string, purpose?: "cleanup" | "solution"): CleanupGates;
 }
 
+/** Where a command reports its steps, so a terminal or a listener can follow them live. */
+export interface IProgress {
+  emit(step: string, status: StepStatus, detail?: string): void;
+}
+
+/** One listener of step events: the terminal, a session log file. */
+export interface IProgressSink {
+  write(event: StepEvent): void;
+}
+
 /** The clean-up's writable git checkout. Pushing is the only call that reaches outside the machine. */
 export interface IGitWorkspace {
-  /** Creates the branch and points `origin` at the mirror's own remote. */
-  prepare(workspace: string, branch: string): Promise<{ baseBranch: string; baseSha: string }>;
+  /**
+   * Creates the branch and points `origin` at the mirror's own remote. Refuses when the branch already exists in the
+   * mirror or on the remote: a branch there means a clean-up or migration already ran on this data. `note` says what
+   * could not be checked.
+   */
+  prepare(workspace: string, branch: string): Promise<{ baseBranch: string; baseSha: string; note?: string }>;
   head(workspace: string): Promise<string>;
   /** Every change since `since`, committed or not, including new files. */
   diffSince(workspace: string, since: string): Promise<string>;
@@ -170,8 +185,15 @@ export interface IPullRequestPublisher {
   open(workspace: string, branch: string, baseBranch: string, title: string, bodyFile: string): Promise<string>;
 }
 
+/** A section of the pulled official docs about a security rule. */
+export interface DocReference {
+  heading: string;
+  url: string;
+}
+
 /** Fixed templates for the clean-up plan and the PR body. */
 export interface ICleanupReportWriter {
   plan(run: CleanupRun, batches: CleanupBatch[]): string;
-  report(run: CleanupRun, batches: CleanupBatch[]): string;
+  /** `docs` maps a security finding's rule to what the pulled docs say about it; undefined when no docs are pulled. */
+  report(run: CleanupRun, batches: CleanupBatch[], docs?: Map<string, DocReference>): string;
 }

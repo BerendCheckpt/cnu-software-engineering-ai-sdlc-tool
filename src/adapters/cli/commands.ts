@@ -14,6 +14,8 @@ export interface ShellContext {
   repo?: string;
   solution?: string;
   run?: string;
+  /** The session every command reports its steps to, when it was named at the start. */
+  session?: string;
 }
 
 /** Output plus what a session should remember; a one-off command only prints the text. */
@@ -163,14 +165,6 @@ export const COMMANDS: CliCommand[] = [
         }
         case "clone":
           return `Mirrored as ${await app.mirrorRepository.execute(approval.id)}.`;
-        case "cleanup-plan":
-          return `Plan accepted. Next: aisdlc cleanup next ${app.cleanup.plan.accepted(approval).id}`;
-        case "cleanup-change": {
-          const batch = await app.cleanup.change.accepted(approval);
-          return `Batch ${batch.number} committed. Next: aisdlc cleanup next ${batch.runId}`;
-        }
-        case "push":
-          return `Pull request: ${await app.cleanup.publish.execute(approval)}`;
         case "crystallize":
           return `Crystallized: ${app.crystallizeMigration.execute(approval)}`;
         default:
@@ -181,15 +175,7 @@ export const COMMANDS: CliCommand[] = [
   {
     name: "deny",
     usage: "deny <approvalId> [--by <name>]",
-    run: async (app, args) => {
-      const approval = app.decideApproval.deny(positional(args, 0, "approval id"), decider(args));
-      if (approval.kind === "cleanup-plan") return `Clean-up ${app.cleanup.plan.denied(approval).id} abandoned.`;
-      if (approval.kind === "cleanup-change") {
-        const batch = await app.cleanup.change.denied(approval);
-        return `Batch ${batch.number} reverted and skipped. Next: aisdlc cleanup next ${batch.runId}`;
-      }
-      return renderer.approval(approval);
-    },
+    run: (app, args) => renderer.approval(app.decideApproval.deny(positional(args, 0, "approval id"), decider(args))),
   },
   {
     name: "docs",
@@ -248,7 +234,8 @@ export const COMMANDS: CliCommand[] = [
   },
   {
     name: "cleanup",
-    usage: "cleanup analyze <mirror> | next <run> | check <run> | skip <run> --reason \"<why>\" | status <run> | finish <run>",
+    usage: "cleanup analyze <mirror> | next <run> | check <run> | skip <run> --reason \"<why>\" | status <run> | finish <run>" +
+      "   automode: finish pushes and opens the PR",
     run: async (app, args) => {
       const [action] = args.positionals;
       const run = () => positional(args, 1, "clean-up run id");
@@ -256,7 +243,7 @@ export const COMMANDS: CliCommand[] = [
         case "analyze": {
           const repo = positional(args, 1, "mirror name");
           const note = await app.linkRepository.uncommittedNote(repo);
-          const analysis = await app.cleanup.analyze.execute(repo);
+          const analysis = await app.cleanup.analyze.execute(repo, args.options["run-id"]);
           return { text: withNote(note, cleanupRenderer.analysis(analysis)), remember: { run: analysis.run.id } };
         }
         case "next":
@@ -272,9 +259,8 @@ export const COMMANDS: CliCommand[] = [
           return cleanupRenderer.status(current, batches);
         }
         case "finish": {
-          const { reportPath, approval, note } = await app.cleanup.finish.execute(run());
-          return [`PR description: ${reportPath}`, ...(note ? [note] : []),
-            `A human approves the push and the pull request: aisdlc approve ${approval.id}`].join("\n");
+          const { reportPath, pullRequest, note } = await app.cleanup.finish.execute(run());
+          return [`PR description: ${reportPath}`, ...(note ? [note] : []), `Pull request: ${pullRequest}`].join("\n");
         }
         default:
           throw new Error("Use: cleanup analyze | next | check | skip | status | finish");
