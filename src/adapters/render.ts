@@ -126,14 +126,16 @@ export class CleanupRenderer {
     }
   }
 
-  check(outcome: CheckOutcome, runId: string): string {
+  /** With `next`, the batch that was started after this one is printed in place of the hint to run `next`. */
+  check(outcome: CheckOutcome, runId: string, next?: NextStep): string {
+    const then = next ? `\n${this.next(next)}` : `Next: aisdlc cleanup next ${runId}`;
     switch (outcome.kind) {
       case "committed":
         return [`Batch ${outcome.batch.number} committed (${outcome.fixed} fixed).`,
           ...(outcome.batch.gates.length
             ? [`Flagged for the PR reviewer: ${outcome.batch.gates.map((g) => `${g.gate}: ${g.files.join(", ")}`).join("; ")}`]
             : []),
-          `Next: aisdlc cleanup next ${runId}`].join("\n");
+          then].join("\n");
       case "nothing-changed":
         return `Batch ${outcome.batch.number} has no changes. Fix its findings, or: aisdlc cleanup skip ${runId} --reason "<why>"`;
       case "regression":
@@ -143,7 +145,7 @@ export class CleanupRenderer {
             (outcome.failures === outcome.maxFixAttempts ? ". One more failure goes to a human." : "")].join("\n");
       case "escalated":
         return [`Batch ${outcome.batch.number} failed its checks too often: its change was reset and a human has it now.`,
-          `Escalation: ${outcome.where}`, `Next: aisdlc cleanup next ${runId}`].join("\n");
+          `Escalation: ${outcome.where}`, then].join("\n");
     }
   }
 

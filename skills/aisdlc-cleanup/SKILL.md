@@ -18,7 +18,7 @@ the way: the engineer reviews the pull request.
   finding with its status and the pulled docs about it, the changes to review closely), pushes and opens the PR.
 
 Your job is the part in the middle: fix the findings of one batch at a time. You run the CLI yourself; the engineer
-does not need to use aisdlc separately. You may hand the batch loop (step 3) to a subagent; give it this skill.
+does not need to use aisdlc separately.
 
 Run commands as `node "$AISDLC_HOME/dist/adapters/cli/main.js" <command>` (or `aisdlc <command>` when it is linked).
 Output is short by design; act on what it says. Steps are also printed live on stderr.
@@ -38,16 +38,21 @@ tell the engineer they can follow every step live in their own terminal with:
    thing that still needs the engineer's `aisdlc approve`. Stop until they have.
 2. **Plan.** `aisdlc cleanup analyze <mirror> --session <name>`. Summarise the plan for the engineer in a few lines
    (gates before, findings per category, batches) and go on; do not wait.
-3. **Work through the batches.** Repeat until `next` says all batches are handled:
-   1. `aisdlc cleanup next <run> --session <name>`. It prints the batch's findings with the code around each one, and
-      the workspace folder. The first batch runs the formatters by itself; just run `check`.
-   2. Fix exactly those findings, editing only files inside the printed workspace.
+3. **Work through the batches.** Hand this step to the `aisdlc-cleanup-batches` subagent when it is available, so the
+   batch loop runs in a small context. Give it the run id, the session name, and the sections "How to fix a finding"
+   and "Rules" below; it returns one line per batch. Without that subagent, do it yourself:
+   1. `aisdlc cleanup next <run> --session <name>`, once. It prints the batch's findings with the code around each
+      one, and the workspace folder. The first batch runs the formatters by itself; just run `check`.
+   2. Read every file the batch names in one message, then make all of the batch's edits in one message. Edit only
+      files inside the printed workspace, and fix exactly those findings.
    3. `aisdlc cleanup check <run> --session <name>`. Then:
-      - **committed**: go to the next batch. "Flagged for the PR reviewer" is information, not a stop.
+      - **committed**: the output already shows the next batch; fix it (step 2). "Flagged for the PR reviewer" is
+        information, not a stop.
       - **not committed**: the output lists what got worse and the blocking SonarQube issues (BLOCKER, HIGH) of the
         batch that are still open, with "fix attempt k of N". Fix them and check again.
       - **escalated**: the batch failed too often. Its change was reset and a GitHub issue was opened for a human.
-        Mention the link to the engineer, then go on with `next`.
+        Note the link for the engineer; the output already shows the next batch.
+   Stop when the output says all batches are handled. `skip` also prints the next batch.
 4. **Finish.** `aisdlc cleanup finish <run> --session <name>` pushes `cleanup/DD-MM-YYYY` and opens the pull request.
    Give the engineer the PR link and the top of its changelog and security concerns. If the push or the PR failed,
    run `finish` again: it retries from the push.
