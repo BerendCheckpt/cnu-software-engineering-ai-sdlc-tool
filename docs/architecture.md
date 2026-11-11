@@ -115,12 +115,12 @@ versions (.NET 9 and 10). The walking skeleton builds plan generation, not execu
 The `aisdlc-cleanup` skill takes a repository to a pull request in small, checked batches
 ([ADR 0008](adr/0008-ephemeral-containers-for-gates.md), [ADR 0009](adr/0009-cleanup-gates-from-the-diff.md)).
 It runs in **automode**: no approval on the way, because the engineer reviews the pull request. Each run has one
-branch, `cleanup/DD-MM-YYYY`, locally and on the remote; a branch that already exists means the data was already
-cleaned up or migrated, and `analyze` refuses.
+branch, `cleanup/DD-MM-YYYY-HHmmss`, locally and on the remote; a branch that already exists means that run already
+happened, and `analyze` refuses. A new run on the same day gets its own branch.
 
 ```mermaid
 flowchart TD
-  A[cleanup analyze] --> BR{"cleanup/DD-MM-YYYY exists locally or on the remote?"}
+  A[cleanup analyze] --> BR{"cleanup/DD-MM-YYYY-HHmmss exists locally or on the remote?"}
   BR -->|yes| STOP[refuse]
   BR -->|no| B["Baseline in containers: tests, Sonar scan, gitleaks, audits"]
   B --> P[Plan: batches by category, at most 10 findings and 5 files each]
@@ -135,7 +135,7 @@ flowchart TD
 ```
 
 Every step is reported to a **session**: `--session <name>` (Claude Code passes its own session name,
-`aisdlc-cleanup-DD-MM-YYYY`), or `cleanup-<run_id>-DD-MM-YYYY`. Steps print live on the terminal that runs the
+`aisdlc-cleanup-DD-MM-YYYY-HHmmss`), or `cleanup-<run_id>-DD-MM-YYYY-HHmmss`. Steps print live on the terminal that runs the
 command and are appended to `work/sessions/<session>.jsonl`, which any listener can read; `aisdlc watch <session>`
 follows it from another terminal.
 

@@ -76,16 +76,33 @@ export async function dispatch(
 
 /**
  * Names the session of a clean-up command and points the steps at it: the name given with `--session` (a Claude
- * Code session passes its own), or `cleanup-<run_id>-DD-MM-YYYY`. Other commands report no steps.
+ * Code session passes its own), or `cleanup-<run_id>-DD-MM-YYYY-HHmmss` with the time of the run's branch, so every
+ * command of one run reports to the same session. Other commands report no steps.
  */
 function beginSession(app: App, command: string, args: ParsedArgs): string | undefined {
   if (command !== "cleanup") return undefined;
   const [action, runId] = args.positionals;
   let id = action === "analyze" ? undefined : runId;
-  if (action === "analyze") id = args.options["run-id"] = newRunId();
-  const name = sessionName(command, { given: args.options.session, runId: id });
+  const now = new Date();
+  let stamp: string | undefined;
+  if (action === "analyze") {
+    id = args.options["run-id"] = newRunId();
+    args.options["run-at"] = now.toISOString();
+  } else if (id) {
+    stamp = runStamp(app, id);
+  }
+  const name = sessionName(command, { given: args.options.session, runId: id, stamp }, now);
   app.progress.begin(name);
   return name;
+}
+
+/** The time part of a run's branch, `cleanup/<stamp>`; none for a run that does not exist. */
+function runStamp(app: App, runId: string): string | undefined {
+  try {
+    return app.cleanup.status.execute(runId).run.branch.replace(/^cleanup\//, "");
+  } catch {
+    return undefined;
+  }
 }
 
 /** The repository of the current folder, for a command that needs one and was given none. Linked once. */

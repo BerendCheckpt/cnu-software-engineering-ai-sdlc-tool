@@ -243,7 +243,8 @@ export const COMMANDS: CliCommand[] = [
         case "analyze": {
           const repo = positional(args, 1, "mirror name");
           const note = await app.linkRepository.uncommittedNote(repo);
-          const analysis = await app.cleanup.analyze.execute(repo, args.options["run-id"]);
+          const at = args.options["run-at"];
+          const analysis = await app.cleanup.analyze.execute(repo, args.options["run-id"], at ? new Date(at) : undefined);
           return { text: withNote(note, cleanupRenderer.analysis(analysis)), remember: { run: analysis.run.id } };
         }
         case "next":
