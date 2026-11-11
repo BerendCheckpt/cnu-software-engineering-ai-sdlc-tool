@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import type { App } from "../composition.js";
+import { parseCleanupLevel } from "../../domain/cleanup.js";
 import { FrontDoor } from "../frontdoor/index.js";
 import { CleanupRenderer, TextRenderer } from "../render.js";
 
@@ -234,8 +235,9 @@ export const COMMANDS: CliCommand[] = [
   },
   {
     name: "cleanup",
-    usage: "cleanup analyze <mirror> | next <run> | check <run> | skip <run> --reason \"<why>\" | status <run> | finish <run>" +
-      "   automode: finish pushes and opens the PR",
+    usage: "cleanup analyze <mirror> [--severity verbose|medium|high] | next <run> | check <run> | skip <run> --reason \"<why>\" | retry <run> | " +
+      "escalate <run> | status <run> | finish <run>   automode: finish pushes and opens the PR; retry and escalate are " +
+      "the engineer's choices for a batch that failed its last try",
     run: async (app, args) => {
       const [action] = args.positionals;
       const run = () => positional(args, 1, "clean-up run id");
@@ -243,7 +245,8 @@ export const COMMANDS: CliCommand[] = [
         case "analyze": {
           const repo = positional(args, 1, "mirror name");
           const note = await app.linkRepository.uncommittedNote(repo);
-          const analysis = await app.cleanup.analyze.execute(repo, args.options["run-id"]);
+          const level = parseCleanupLevel(args.options.severity);
+          const analysis = await app.cleanup.analyze.execute(repo, args.options["run-id"], undefined, level);
           return { text: withNote(note, cleanupRenderer.analysis(analysis)), remember: { run: analysis.run.id } };
         }
         case "next":
@@ -251,8 +254,15 @@ export const COMMANDS: CliCommand[] = [
         case "check": {
           // A batch that is done starts the next one right away, which saves the caller a round trip.
           const outcome = await app.cleanup.check.execute(run());
-          const done = outcome.kind === "committed" || outcome.kind === "escalated";
+          const done = outcome.kind === "committed";
           return cleanupRenderer.check(outcome, run(), done ? await app.cleanup.next.execute(run()) : undefined);
+        }
+        // The engineer's two choices for a batch that failed its last try.
+        case "retry":
+          return `Batch retried: the count starts again.\n${cleanupRenderer.next(app.cleanup.retry.execute(run()))}`;
+        case "escalate": {
+          const outcome = await app.cleanup.escalate.execute(run());
+          return cleanupRenderer.escalation(outcome, run(), await app.cleanup.next.execute(run()));
         }
         case "skip": {
           const batch = await app.cleanup.skip.execute(run(), required(args, "reason"));
@@ -267,7 +277,7 @@ export const COMMANDS: CliCommand[] = [
           return [`PR description: ${reportPath}`, ...(note ? [note] : []), `Pull request: ${pullRequest}`].join("\n");
         }
         default:
-          throw new Error("Use: cleanup analyze | next | check | skip | status | finish");
+          throw new Error("Use: cleanup analyze | next | check | skip | retry | escalate | status | finish");
       }
     },
   },

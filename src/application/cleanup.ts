@@ -2,8 +2,10 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
-  CleanupBatch, CleanupRun, findingKey, isSecurityFinding, ValidPr, type GateSnapshot, type Snapshot,
+  CleanupBatch, CleanupRun, findingKey, isRequired, isSecurityFinding, ValidPr, type CleanupLevel, type Finding,
+  type GateSnapshot, type Snapshot,
 } from "../domain/cleanup.js";
+import { isSonar } from "../domain/quality.js";
 import type { CleanupPlanner } from "../domain/cleanupPlanner.js";
 import type { DiffClassifier } from "../domain/diffClassifier.js";
 import { DomainError } from "../domain/errors.js";
@@ -111,7 +113,8 @@ export class AnalyzeRepository {
     private readonly progress: IProgress,
   ) {}
 
-  async execute(repository: string, id = newRunId(), now = new Date()): Promise<AnalysisResult> {
+  /** `level` picks the SonarQube severities to fix; findings below it are not planned. */
+  async execute(repository: string, id = newRunId(), now = new Date(), level: CleanupLevel = "verbose"): Promise<AnalysisResult> {
     if (!this.mirror.exists(repository)) {
       throw new DomainError(`No mirror or linked folder ${repository}. Link a folder you pulled with: repo link <folder>, ` +
         "or request a clone with: repo add <https-url>");
@@ -133,9 +136,9 @@ export class AnalyzeRepository {
     const measured = await this.measure.execute(id, workspace);
     const baseline = note ? { ...measured, limitations: [...measured.limitations ?? [], note] } : measured;
 
-    const run = CleanupRun.start({ id, repository, workspace, branch, baseBranch, baseline });
+    const run = CleanupRun.start({ id, repository, workspace, branch, baseBranch, baseline, level });
     run.moveTo("accepted");
-    const batches = this.planner.plan(id, baseline.findings);
+    const batches = this.planner.plan(id, baseline.findings.filter((f) => isRequired(f, level)));
     this.store.saveRun(run);
     for (const batch of batches) this.store.saveBatch(batch);
     const planPath = this.folders.plan(id);
@@ -150,6 +153,8 @@ export class AnalyzeRepository {
 export type NextStep =
   | { kind: "work"; run: CleanupRun; batch: CleanupBatch; findings: FindingWithCode[] }
   | { kind: "formatted"; run: CleanupRun; batch: CleanupBatch; applied: string[] }
+  /** A batch failed its last try; nothing goes on until the engineer retries or escalates it. */
+  | { kind: "waiting"; run: CleanupRun; batch: CleanupBatch }
   | { kind: "finished"; run: CleanupRun };
 
 /** Starts the next batch, or returns the one still open. The formatting batch runs its tools here, without a model. */
@@ -166,6 +171,8 @@ export class NextBatch {
     run.requireState("accepted", "in-progress");
     const batches = this.store.batches(runId);
 
+    const waiting = batches.find((b) => b.isWaiting);
+    if (waiting) return { kind: "waiting", run, batch: waiting };
     const open = batches.find((b) => b.isOpen);
     if (open) return this.work(run, open);
 
@@ -199,22 +206,27 @@ export class NextBatch {
 export type CheckOutcome =
   | { kind: "committed"; batch: CleanupBatch; fixed: number }
   | { kind: "nothing-changed"; batch: CleanupBatch }
-  /** Not committed: something got worse, or a blocking SonarQube issue of the batch is still open. */
-  | {
-    kind: "regression"; batch: CleanupBatch; problems: string[]; open: FindingWithCode[];
-    failures: number; maxFixAttempts: number;
-  }
-  | { kind: "escalated"; batch: CleanupBatch; where: string };
+  /** Not committed: something got worse, or a finding of the batch is still open. */
+  | { kind: "regression"; batch: CleanupBatch; problems: string[]; open: FindingWithCode[]; tries: number; maxTries: number }
+  /** The last allowed try failed: the batch keeps its change and waits for the engineer to retry or escalate it. */
+  | { kind: "waiting"; batch: CleanupBatch; problems: string[]; open: FindingWithCode[]; tries: number };
 
 /** `cleanup:<runId>#<batch>`: the fix loop of one batch. */
 export function batchSubject(batch: CleanupBatch): string {
   return `cleanup:${batch.runId}#${batch.number}`;
 }
 
+/** The batch's own findings that the measurement still reports. */
+function stillOpen(findings: Finding[], current: Snapshot): Finding[] {
+  const open = new Set(current.findings.map(findingKey));
+  return findings.filter((f) => open.has(findingKey(f)));
+}
+
 /**
- * Measures the open batch and decides what happens to it: committed, sent back to the model, or escalated to a
- * human after too many failed checks (ADR 0010). A diff that touches tests, dependencies or security-sensitive code
- * is committed too, with what it touched kept on the batch, so the PR flags it for the reviewer.
+ * Measures the open batch and decides what happens to it. A batch is done only when every one of its findings is
+ * gone and nothing got worse; then it is committed. Otherwise it goes back to the model, up to `maxTries` checks;
+ * when the last one fails, the batch waits for the engineer (ADR 0011). A diff that touches tests, dependencies or
+ * security-sensitive code is committed too, with what it touched kept on the batch, so the PR flags it.
  */
 export class CheckBatch {
   constructor(
@@ -224,15 +236,17 @@ export class CheckBatch {
     private readonly measure: MeasureWorkspace,
     private readonly classifier: DiffClassifier,
     private readonly fixLoop: SonarFixLoop,
-    private readonly mirror: IRepoMirror,
-    private readonly gates: ICleanupGateFactory,
+    private readonly maxTries: number,
     private readonly progress: IProgress,
   ) {}
 
   async execute(runId: string): Promise<CheckOutcome> {
     const run = requireRun(this.store, runId);
     run.requireState("in-progress");
-    const batch = this.store.batches(runId).find((b) => b.isOpen);
+    const batches = this.store.batches(runId);
+    const waiting = batches.find((b) => b.isWaiting);
+    if (waiting) throw new DomainError(waitingMessage(run.id, waiting));
+    const batch = batches.find((b) => b.isOpen);
     if (!batch?.baseSha) throw new DomainError("No batch is open. Start one with: cleanup next");
     const step = `check batch ${batch.number}`;
     this.progress.emit(step, "started", batch.category);
@@ -255,41 +269,22 @@ export class CheckBatch {
     const current = await this.measure.execute(run.id, run.workspace);
     const problems = ValidPr.problems(run.reference, current,
       { fewerTestsApproved: gates.some((g) => g.gate === "tests") });
-    // The batch's own blocking issues must be gone; new ones are already a problem above.
-    const stillOpen = new Set(current.findings.map(findingKey));
-    const open = this.fixLoop.policy.blocking(batch.findings).filter((f) => stillOpen.has(findingKey(f)));
-    const loop = await this.fixLoop.check(batchSubject(batch),
-      { blocking: open, reported: this.fixLoop.policy.reported(batch.findings), problems },
-      async () => ({
-        task: `clean-up ${run.id}, batch ${batch.number} (${batch.category}) of ${run.repository}`,
-        details: batch.findings.slice(0, 10).map((f) => `${f.severity} ${f.rule} \`${f.file}${f.line ? `:${f.line}` : ""}\`: ${f.message}`),
-        repository: run.repository,
-        remoteUrl: await this.mirror.remoteUrl(run.repository).catch(() => undefined),
-        location: [
-          `Branch: ${run.branch}, local only and not pushed, from ${run.baseBranch}`,
-          `The batch started at commit ${batch.baseSha}; its change was reset and is in the diff below.`,
-          `Workspace: ${run.workspace}`,
-        ],
-        ...sonarLink(this.gates.forRun(run.id).sonarProjectUrl),
-        diff,
-        reproduce: `aisdlc cleanup check ${run.id}`,
-        limitations: current.limitations ?? [],
-      }));
-    if (loop.kind === "escalated") {
-      await this.git.resetTo(run.workspace, batch.baseSha);
-      batch.escalate(loop.where);
-      this.store.saveBatch(batch);
-      this.progress.emit(step, "failed", `escalated: ${loop.where}`);
-      return { kind: "escalated", batch, where: loop.where };
-    }
-    if (loop.kind === "fix-required") {
+    // Every finding of the batch must be gone, whatever its severity; new ones are already a problem above.
+    const open = stillOpen(batch.findings, current);
+    const loop = this.fixLoop.checkBatch(batchSubject(batch), { blocking: open, reported: [], problems }, this.maxTries);
+    if (loop.kind !== "clean") {
+      const summary = [...problems, ...open.map((f) => `${f.rule} still open`)].slice(0, 3).join("; ");
+      if (loop.kind === "engineer") {
+        batch.waitForEngineer();
+        this.store.saveBatch(batch);
+        this.progress.emit(step, "failed", `try ${loop.tries} of ${loop.maxTries}, waiting for the engineer: ${summary}`);
+        return { kind: "waiting", batch, problems, open: withCode(run.workspace, open), tries: loop.tries };
+      }
       batch.recordFailedCheck();
       this.store.saveBatch(batch);
-      this.progress.emit(step, "failed", `attempt ${loop.failures} of ${loop.maxFixAttempts}: ` +
-        [...problems, ...open.map((f) => `${f.rule} still open`)].slice(0, 3).join("; "));
+      this.progress.emit(step, "failed", `try ${loop.tries} of ${loop.maxTries}: ${summary}`);
       return {
-        kind: "regression", batch, problems, open: withCode(run.workspace, open),
-        failures: loop.failures, maxFixAttempts: loop.maxFixAttempts,
+        kind: "regression", batch, problems, open: withCode(run.workspace, open), tries: loop.tries, maxTries: loop.maxTries,
       };
     }
 
@@ -304,12 +299,117 @@ export class CheckBatch {
   }
 }
 
-/** Gives up on the open batch: its changes are thrown away and the reason is kept for the report. */
+/** The engineer's choice for a waiting batch: another `maxTries` checks, with the change made so far kept. */
+export class RetryBatch {
+  constructor(
+    private readonly store: ICleanupStore,
+    private readonly fixLoop: SonarFixLoop,
+    private readonly progress: IProgress,
+  ) {}
+
+  execute(runId: string): NextStep {
+    const run = requireRun(this.store, runId);
+    run.requireState("in-progress");
+    const batch = this.store.batches(runId).find((b) => b.isWaiting);
+    if (!batch) throw new DomainError("No batch waits for the engineer.");
+    const subject = batchSubject(batch);
+    const left = this.fixLoop.current(subject)?.last?.blocking ?? [];
+    this.fixLoop.reopen(subject);
+    batch.retry();
+    this.store.saveBatch(batch);
+    this.progress.emit(`batch ${batch.number}`, "info", "the engineer chose to retry");
+    return { kind: "work", run, batch, findings: withCode(run.workspace, left.length ? left : batch.findings) };
+  }
+}
+
+export interface EscalationOutcome {
+  batch: CleanupBatch;
+  /** True when the batch's change made nothing worse and was committed with the findings it did fix. */
+  committed: boolean;
+  /** Why the change was not committed. */
+  problems: string[];
+  /** One link per finding left, or where its issue text is when the issue could not be opened. */
+  issues: string[];
+}
+
+/**
+ * The engineer's other choice for a waiting batch: a PR with an issue per finding left. The batch's change is
+ * committed when it made nothing worse, and reset otherwise. The run then goes on with the next batch; `finish`
+ * opens the PR, which lists the issues.
+ */
+export class EscalateBatch {
+  constructor(
+    private readonly store: ICleanupStore,
+    private readonly git: IGitWorkspace,
+    private readonly sandbox: ISandbox,
+    private readonly measure: MeasureWorkspace,
+    private readonly classifier: DiffClassifier,
+    private readonly fixLoop: SonarFixLoop,
+    private readonly mirror: IRepoMirror,
+    private readonly gates: ICleanupGateFactory,
+    private readonly progress: IProgress,
+  ) {}
+
+  async execute(runId: string): Promise<EscalationOutcome> {
+    const run = requireRun(this.store, runId);
+    run.requireState("in-progress");
+    const batch = this.store.batches(runId).find((b) => b.isWaiting);
+    if (!batch?.baseSha) throw new DomainError("No batch waits for the engineer.");
+    const step = `escalate batch ${batch.number}`;
+    this.progress.emit(step, "started", batch.category);
+
+    const diff = await this.git.diffSince(run.workspace, batch.baseSha);
+    const gates = this.classifier.classify(diff, batch.category);
+    let left = batch.findings;
+    let problems = ["nothing changed"];
+    let commitSha: string | undefined;
+    let limitations = run.reference.limitations ?? [];
+    if (diff.trim()) {
+      await this.sandbox.ensureAvailable();
+      const current = await this.measure.execute(run.id, run.workspace);
+      limitations = current.limitations ?? [];
+      problems = ValidPr.problems(run.reference, current, { fewerTestsApproved: gates.some((g) => g.gate === "tests") });
+      if (problems.length) {
+        await this.git.resetTo(run.workspace, batch.baseSha);
+      } else {
+        left = stillOpen(batch.findings, current);
+        commitSha = await this.git.commit(run.workspace, commitMessage(batch, ValidPr.fixed(run.reference, current).length));
+        run.acceptMeasurement(current);
+      }
+    }
+
+    const issues = await this.fixLoop.openIssues(batchSubject(batch), left, async () => ({
+      task: `clean-up ${run.id}, batch ${batch.number} (${batch.category}) of ${run.repository}`,
+      details: [],
+      repository: run.repository,
+      remoteUrl: await this.mirror.remoteUrl(run.repository).catch(() => undefined),
+      location: [
+        `Branch: ${run.branch}, from ${run.baseBranch}; \`aisdlc cleanup finish\` pushes it and opens the PR`,
+        commitSha
+          ? `The batch's partial fix is commit ${commitSha}.`
+          : `The batch's change was reset to ${batch.baseSha}: ${problems.join("; ")}.`,
+      ],
+      ...sonarLink(this.gates.forRun(run.id).sonarProjectUrl),
+      diff,
+      reproduce: `aisdlc cleanup status ${run.id}`,
+      limitations,
+    }));
+    batch.escalate(issues.length ? issues.join(", ") : "no finding was left", commitSha, gates);
+    this.store.saveBatch(batch);
+    this.store.saveRun(run);
+    this.progress.emit(step, "done", `${commitSha ? "partial fix committed" : "change reset"}, ${issues.length} issues`);
+    return { batch, committed: Boolean(commitSha), problems: commitSha ? [] : problems, issues };
+  }
+}
+
+/**
+ * Gives up on the open batch: its changes are thrown away and the reason is kept for the report. A batch with
+ * SonarQube findings cannot be skipped: it is done only when they are gone, or when the engineer escalates it.
+ */
 export class SkipBatch {
   constructor(
     private readonly store: ICleanupStore,
     private readonly git: IGitWorkspace,
-    private readonly fixLoop: SonarFixLoop,
     private readonly progress: IProgress,
   ) {}
 
@@ -317,10 +417,10 @@ export class SkipBatch {
     const run = requireRun(this.store, runId);
     const batch = this.store.batches(runId).find((b) => b.isOpen);
     if (!batch?.baseSha) throw new DomainError("No batch is open.");
-    const blocking = this.fixLoop.policy.blocking(batch.findings);
-    if (blocking.length) {
-      throw new DomainError(`Batch ${batch.number} has ${blocking.length} blocking SonarQube issues, so it cannot be ` +
-        `skipped. Fix them and run: aisdlc cleanup check ${run.id}. After too many failed checks it goes to a human.`);
+    const smells = batch.findings.filter(isSonar);
+    if (smells.length) {
+      throw new DomainError(`Batch ${batch.number} has ${smells.length} SonarQube findings, so it cannot be skipped. ` +
+        `Fix them and run: aisdlc cleanup check ${run.id}. After the last try the engineer decides.`);
     }
     batch.skip(reason);
     await this.git.resetTo(run.workspace, batch.baseSha);
@@ -328,6 +428,13 @@ export class SkipBatch {
     this.progress.emit(`batch ${batch.number}`, "info", `skipped: ${reason}`);
     return batch;
   }
+}
+
+/** What to tell the caller while a batch waits: only the engineer may choose. */
+export function waitingMessage(runId: string, batch: CleanupBatch): string {
+  return `Batch ${batch.number} still has findings open after its last try and waits for the engineer. Ask them to ` +
+    `choose: retry it (aisdlc cleanup retry ${runId}), or a PR with an issue per finding left ` +
+    `(aisdlc cleanup escalate ${runId}).`;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -380,24 +487,30 @@ export class FinishCleanup {
     if (unfinished.length) {
       throw new DomainError(`Batches ${unfinished.map((b) => `${b.number} (${b.status})`).join(", ")} are not finished.`);
     }
-    // Every blocking issue is either fixed, or a human has it in an escalation issue.
+    // Every blocking issue is either fixed, or the engineer escalated its batch and it has an issue.
     const escalated = new Set(batches.filter((b) => b.status === "escalated").flatMap((b) => b.findings.map(findingKey)));
-    const open = this.fixLoop.policy.blocking(run.reference.findings).filter((f) => !escalated.has(findingKey(f)));
+    const open = run.reference.findings
+      .filter((f) => isSonar(f) && isRequired(f, run.level) && !escalated.has(findingKey(f)));
     if (open.length) {
-      throw new DomainError(`${open.length} blocking SonarQube issues are still open and not escalated: ` +
+      throw new DomainError(`${open.length} SonarQube issues at level ${run.level} are still open and not escalated: ` +
         `${open.slice(0, 5).map((f) => `${f.rule} ${f.file}${f.line ? `:${f.line}` : ""}`).join(", ")}` +
         `${open.length > 5 ? ", …" : ""}. Add their category to config/cleanup.yaml and analyze again, or fix them.`);
     }
     if (!batches.some((b) => b.commitSha)) throw new DomainError("No batch was committed, so there is nothing to push.");
 
-    const fewerTestsApproved = batches.some((b) => b.status === "done" && b.gates.some((g) => g.gate === "tests"));
+    const fewerTestsApproved = batches.some((b) => b.commitSha && b.gates.some((g) => g.gate === "tests"));
     const problems = ValidPr.problems(run.baseline, run.reference, { fewerTestsApproved });
     if (problems.length) throw new DomainError(`Not a valid PR: ${problems.join("; ")}`);
 
     const reportPath = this.folders.report(run.id);
-    writeFileSync(reportPath, this.writer.report(run, batches, this.docReferences(run)), "utf8");
+    const gates = this.gates.forRun(run.id);
+    writeFileSync(reportPath, this.writer.report(run, batches, this.docReferences(run), gates.sonarProject), "utf8");
     this.progress.emit("report", "done", reportPath);
-    const note = await this.gates.forRun(run.id).release();
+    // Findings below the run's level stay in its SonarQube project, which the PR points to.
+    const left = run.leftForLater.length;
+    const note = left
+      ? `Kept the SonarQube project${gates.sonarProject ? ` ${gates.sonarProject}` : ""}: ${left} findings below level ${run.level} are left in it.`
+      : await gates.release();
     run.moveTo("ready");
     this.store.saveRun(run);
     return note;

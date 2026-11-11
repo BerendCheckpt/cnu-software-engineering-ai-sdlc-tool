@@ -1,6 +1,6 @@
 # ADR 0010: A task is done only without open blocking SonarQube issues; after N fixes it goes to a human
 
-- **Status:** Accepted
+- **Status:** Accepted; for clean-up batches replaced by ADR 0011
 - **Date:** 2026-11-05
 
 ## Context

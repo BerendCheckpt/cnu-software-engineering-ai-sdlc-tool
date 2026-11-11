@@ -7,7 +7,7 @@ import type { App } from "../composition.js";
 import { COMMANDS, type CommandResult, type ParsedArgs } from "./commands.js";
 
 const OPTIONS = ["prompt", "plan", "reason", "summary", "diff-file", "repo", "commit", "files", "pr", "by",
-  "framework", "version", "from", "to", "steps-file", "name", "session"] as const;
+  "framework", "version", "from", "to", "steps-file", "name", "session", "severity"] as const;
 
 /** Every option the commands know, for completion. */
 export const OPTION_NAMES = [...OPTIONS, "all"].map((o) => `--${o}`);

@@ -1,4 +1,6 @@
-import type { AnalysisResult, CheckOutcome, NextStep } from "../application/cleanup.js";
+import {
+  waitingMessage, type AnalysisResult, type CheckOutcome, type EscalationOutcome, type NextStep,
+} from "../application/cleanup.js";
 import type { EvaluationOutcome } from "../application/evaluation.js";
 import type { FindingWithCode } from "../application/snippets.js";
 import type { Approval } from "../domain/approval.js";
@@ -100,7 +102,8 @@ export class CleanupRenderer {
 
   analysis(r: AnalysisResult): string {
     return [
-      `Clean-up ${r.run.id}: ${r.batches.length} batches, ${r.run.baseline.findings.length} findings.`,
+      `Clean-up ${r.run.id}: ${r.batches.length} batches, ${r.run.baseline.findings.length} findings, severity level ` +
+        `${r.run.level}${r.run.leftForLater.length ? ` (${r.run.leftForLater.length} below it left for later)` : ""}.`,
       ...r.run.baseline.gates.map((g) => `  ${g.kind}: ${g.skipped ? "skipped" : g.passed ? "passed" : "failed"}`),
       ...(r.run.baseline.limitations ?? []).map((l) => `  not covered: ${l}`),
       `Branch: ${r.run.branch}. Plan: ${r.planPath}`,
@@ -112,6 +115,8 @@ export class CleanupRenderer {
     switch (step.kind) {
       case "finished":
         return `All batches are handled. Next: aisdlc cleanup finish ${step.run.id}`;
+      case "waiting":
+        return waitingMessage(step.run.id, step.batch);
       case "formatted":
         return [`Batch ${step.batch.number}: ran ${step.applied.length ? step.applied.join(", ") : "no formatter (none applies)"}.`,
           `Next: aisdlc cleanup check ${step.run.id}`].join("\n");
@@ -140,13 +145,26 @@ export class CleanupRenderer {
         return `Batch ${outcome.batch.number} has no changes. Fix its findings, or: aisdlc cleanup skip ${runId} --reason "<why>"`;
       case "regression":
         return [`Batch ${outcome.batch.number} is not committed:`, ...outcome.problems.map((p) => `  - ${p}`),
-          ...(outcome.open.length ? ["Blocking SonarQube issues still open:", ...this.text.findings(outcome.open)] : []),
-          `Fix attempt ${outcome.failures} of ${outcome.maxFixAttempts}. Fix it and run: aisdlc cleanup check ${runId}` +
-            (outcome.failures === outcome.maxFixAttempts ? ". One more failure goes to a human." : "")].join("\n");
-      case "escalated":
-        return [`Batch ${outcome.batch.number} failed its checks too often: its change was reset and a human has it now.`,
-          `Escalation: ${outcome.where}`, then].join("\n");
+          ...(outcome.open.length ? ["Findings of the batch still open:", ...this.text.findings(outcome.open)] : []),
+          `Try ${outcome.tries} of ${outcome.maxTries}. Fix every one and run: aisdlc cleanup check ${runId}` +
+            (outcome.tries === outcome.maxTries - 1 ? ". If the next try fails, the engineer decides." : "")].join("\n");
+      case "waiting":
+        return [`Batch ${outcome.batch.number} is not committed after ${outcome.tries} tries. Its change is kept in the workspace.`,
+          ...outcome.problems.map((p) => `  - ${p}`),
+          ...(outcome.open.length ? ["Findings of the batch still open:", ...this.text.findings(outcome.open)] : []),
+          `STOP. ${waitingMessage(runId, outcome.batch)}`].join("\n");
     }
+  }
+
+  escalation(outcome: EscalationOutcome, runId: string, next: NextStep): string {
+    return [
+      `Batch ${outcome.batch.number} escalated: ` + (outcome.committed
+        ? "its partial fix is committed."
+        : `its change was reset (${outcome.problems.join("; ")}).`),
+      ...(outcome.issues.length ? [`Issues for the findings left:`, ...outcome.issues.map((i) => `  - ${i}`)] : []),
+      `The PR lists them; aisdlc cleanup finish ${runId} opens it once every batch is handled.`,
+      this.next(next),
+    ].join("\n");
   }
 
   status(run: CleanupRun, batches: CleanupBatch[]): string {

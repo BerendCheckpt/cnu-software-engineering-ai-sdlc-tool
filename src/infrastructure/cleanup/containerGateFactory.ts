@@ -25,7 +25,7 @@ export class ContainerGateFactory implements ICleanupGateFactory {
     const projectKey = `aisdlc-${purpose}-${id}`;
     const sonarProjectUrl = this.sonar.configured ? this.sonar.projectUrl(projectKey) : undefined;
     return {
-      ...(sonarProjectUrl ? { sonarProjectUrl } : {}),
+      ...(sonarProjectUrl ? { sonarProjectUrl, sonarProject: projectKey } : {}),
       evaluators: [
         new XunitEvaluator(this.runners.offline),
         new VitestEvaluator(this.runners.offline),

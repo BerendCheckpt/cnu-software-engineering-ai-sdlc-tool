@@ -87,6 +87,39 @@ export class EscalationReportWriter implements IEscalationWriter {
     return { title, body };
   }
 
+  renderFinding(context: EscalationContext, finding: Finding, loop: FixLoop): { title: string; body: string } {
+    const at = `${finding.file}${finding.line ? `:${finding.line}` : ""}`;
+    const rules = context.sonarProjectUrl ? new URL(context.sonarProjectUrl).origin : undefined;
+    const title = `aisdlc: ${finding.severity} ${finding.rule} in ${finding.file}: ${finding.message}`.slice(0, 240);
+    const body = [
+      `aisdlc could not fix this finding in ${loop.attempts.length} tries, and the engineer chose to open a pull ` +
+        "request with an issue for each finding that was left.",
+      "",
+      "## Finding",
+      "",
+      `- Severity: ${finding.severity}`,
+      `- Rule: ${this.rule(finding, rules)}`,
+      `- Location: \`${at}\``,
+      `- Message: ${finding.message}`,
+      "",
+      "## Where",
+      "",
+      `- Task: ${context.task}`,
+      `- Repository: ${context.remoteUrl ?? context.repository} (mirror \`${context.repository}\`)`,
+      ...context.location.map((l) => `- ${l}`),
+      ...(context.sonarProjectUrl ? [`- SonarQube: ${context.sonarProjectUrl}`] : []),
+      "",
+      ...(context.limitations.length ? ["## Not covered by the check", "", ...context.limitations.map((l) => `- ${l}`), ""] : []),
+      "## What is left for you",
+      "",
+      "- Fix the finding, or decide in SonarQube that it is a false positive and say why.",
+      "",
+      "Opened by aisdlc.",
+      "",
+    ].join("\n");
+    return { title, body };
+  }
+
   private rule(f: Finding, origin: string | undefined): string {
     return origin ? `[${f.rule}](${origin}/coding_rules?open=${encodeURIComponent(f.rule)})` : f.rule;
   }

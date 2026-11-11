@@ -13,7 +13,9 @@ the way: the engineer reviews the pull request.
   readability. One branch per run: `cleanup/DD-MM-YYYY`. If that branch already exists, a clean-up or migration
   already ran on this data and `analyze` refuses.
 - **Checking each batch.** The whole repository is measured again and compared with the last committed measurement.
-  A batch that changes tests, dependencies or security-sensitive code is committed and flagged in the PR.
+  A batch is done only when **every** one of its findings is gone (code smells of any severity included) and nothing
+  got worse. It gets 5 tries; after the 5th failed try the run stops and the engineer decides. A batch that changes
+  tests, dependencies or security-sensitive code is committed and flagged in the PR.
 - **The PR.** `finish` writes the PR body (changelog of every fixed finding ranked by severity, every security
   finding with its status and the pulled docs about it, the changes to review closely), pushes and opens the PR.
 
@@ -40,7 +42,8 @@ tell the engineer they can follow every step live in their own terminal with:
    (gates before, findings per category, batches) and go on; do not wait.
 3. **Work through the batches.** Hand this step to the `aisdlc-cleanup-batches` subagent when it is available, so the
    batch loop runs in a small context. Give it the run id, the session name, and the sections "How to fix a finding"
-   and "Rules" below; it returns one line per batch. Without that subagent, do it yourself:
+   and "Rules" below; it returns one line per batch, and stops early when a batch waits for the engineer (step 4).
+   After step 4, hand the rest of the loop to it again. Without that subagent, do it yourself:
    1. `aisdlc cleanup next <run> --session <name>`, once. It prints the batch's findings with the code around each
       one, and the workspace folder. The first batch runs the formatters by itself; just run `check`.
    2. Read every file the batch names in one message, then make all of the batch's edits in one message. Edit only
@@ -48,12 +51,19 @@ tell the engineer they can follow every step live in their own terminal with:
    3. `aisdlc cleanup check <run> --session <name>`. Then:
       - **committed**: the output already shows the next batch; fix it (step 2). "Flagged for the PR reviewer" is
         information, not a stop.
-      - **not committed**: the output lists what got worse and the blocking SonarQube issues (BLOCKER, HIGH) of the
-        batch that are still open, with "fix attempt k of N". Fix them and check again.
-      - **escalated**: the batch failed too often. Its change was reset and a GitHub issue was opened for a human.
-        Note the link for the engineer; the output already shows the next batch.
+      - **not committed**: the output lists what got worse and every finding of the batch that is still open, with
+        "try k of 5". Fix all of them, whatever their severity, and check again.
+      - **STOP, waits for the engineer**: the 5th try failed. Do not edit anything more. Go to step 4.
    Stop when the output says all batches are handled. `skip` also prints the next batch.
-4. **Finish.** `aisdlc cleanup finish <run> --session <name>` pushes `cleanup/DD-MM-YYYY` and opens the pull request.
+4. **Engineer's decision.** When a batch waits for the engineer, ask them with AskUserQuestion, naming the batch, its
+   category and the findings still open:
+   - **Retry**: run `aisdlc cleanup retry <run> --session <name>`. The batch gets 5 more tries, with its change kept.
+     Go back to step 3.
+   - **PR and issues**: run `aisdlc cleanup escalate <run> --session <name>`. It commits the batch's partial fix when it
+     made nothing worse (or resets it), opens a GitHub issue for each finding left, and prints the next batch. Go
+     back to step 3; when all batches are handled, go to step 5, which opens the PR.
+   Run neither command before the engineer has answered, and run exactly the one they chose.
+5. **Finish.** `aisdlc cleanup finish <run> --session <name>` pushes `cleanup/DD-MM-YYYY` and opens the pull request.
    Give the engineer the PR link and the top of its changelog and security concerns. If the push or the PR failed,
    run `finish` again: it retries from the push.
 
@@ -70,10 +80,11 @@ tell the engineer they can follow every step live in their own terminal with:
 
 ## Rules
 
-- A batch with blocking SonarQube issues cannot be skipped; fix them. Only a batch without them may be skipped, with
+- A batch with SonarQube findings cannot be skipped; fix them. Only a batch without them may be skipped, with
   `aisdlc cleanup skip <run> --reason "<why>" --session <name>`, when its findings cannot be fixed without changing
   behaviour.
-- Never try to get around the attempt count: the CLI keeps it, and the escalation is the engineer's signal.
+- Never try to get around the try count: the CLI keeps it, and the stop after the last try is the engineer's call.
+  Never run `cleanup retry` or `cleanup escalate` on your own.
 - Never run `approve` or `deny`. They are the engineer's decisions, and the CLI refuses them without an interactive
   terminal.
 - Never push, open a PR, create branches, change git remotes, or commit in the workspace yourself. The CLI commits each

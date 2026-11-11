@@ -91,7 +91,7 @@ there are uncommitted changes that the copy does not contain. A clean-up's push 
 | Tokens, URLs and ports | `.env` in the data root | copy `.env.example`; ignored by git; a value in `.env` wins over the environment |
 | SonarQube | `SONAR_HOST_URL`, `SONAR_TOKEN` in `.env` | never logged, passed to the scanner container by name |
 | Chat gateway | `AISDLC_UPSTREAM_URL`, `AISDLC_GATEWAY_HOST`, `AISDLC_GATEWAY_PORT` in `.env` | listens on `127.0.0.1:8091` unless set |
-| Clean-up batches and human gates | `config/cleanup.yaml` | limits, category order, test, dependency and security patterns |
+| Clean-up batches and human gates | `config/cleanup.yaml` | limits, category order, `maxTries` (5) per batch before the engineer decides, test, dependency and security patterns. Which SonarQube severities a run must fix is `cleanup analyze --severity verbose\|medium\|high` (default `verbose`) |
 | SonarQube fix loop | `config/quality.yaml` | blocking and reported severities, `maxFixAttempts` (3); escalation needs `gh` logged in |
 | Container images for the gates | `config/runners.yaml` | needs Docker; pin each image by digest after its first pull |
 

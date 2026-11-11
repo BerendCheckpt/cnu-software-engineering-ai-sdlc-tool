@@ -2,7 +2,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DecideApproval, RequestApproval } from "../application/approvals.js";
 import {
-  AnalyzeRepository, CheckBatch, CleanupFolders, CleanupStatus, FinishCleanup, MeasureWorkspace, NextBatch, SkipBatch,
+  AnalyzeRepository, CheckBatch, CleanupFolders, CleanupStatus, EscalateBatch, FinishCleanup, MeasureWorkspace, NextBatch,
+  RetryBatch, SkipBatch,
 } from "../application/cleanup.js";
 import { CrystallizeFolders, CrystallizeMigration, RequestCrystallization } from "../application/crystallize.js";
 import { PullDocs, ReindexDocs, RequestDocs, SearchDocs } from "../application/docs.js";
@@ -204,13 +205,15 @@ function createCleanup(
   const git = new GitWorkspace(host);
   const measure = new MeasureWorkspace(parts.restorer, parts.gates, progress);
   const writer = new CleanupReportWriter();
+  const classifier = new DiffClassifier(policy.patterns);
   return {
     analyze: new AnalyzeRepository(folders, store, mirror, git, parts.sandbox, measure,
       new CleanupPlanner(policy.limits, policy.order), writer, progress),
     next: new NextBatch(store, git, parts.formatters, progress),
-    check: new CheckBatch(store, git, parts.sandbox, measure, new DiffClassifier(policy.patterns), fixLoop, mirror,
-      parts.gates, progress),
-    skip: new SkipBatch(store, git, fixLoop, progress),
+    check: new CheckBatch(store, git, parts.sandbox, measure, classifier, fixLoop, policy.maxTries, progress),
+    retry: new RetryBatch(store, fixLoop, progress),
+    escalate: new EscalateBatch(store, git, parts.sandbox, measure, classifier, fixLoop, mirror, parts.gates, progress),
+    skip: new SkipBatch(store, git, progress),
     finish: new FinishCleanup(folders, store, parts.gates, writer, fixLoop, git,
       parts.publisher ?? new GhPullRequestPublisher(host), searchDocs, progress),
     status: new CleanupStatus(store),

@@ -95,6 +95,8 @@ export interface EscalationContext {
 /** Fixed template for an escalation issue. */
 export interface IEscalationWriter {
   render(context: EscalationContext, loop: FixLoop, maxFixAttempts: number): { title: string; body: string };
+  /** One finding the engineer chose to leave open after the batch's tries, as its own issue. */
+  renderFinding(context: EscalationContext, finding: Finding, loop: FixLoop): { title: string; body: string };
 }
 
 export interface IMigrationCatalog {
@@ -145,6 +147,8 @@ export interface CleanupGates {
   findingSources: IFindingSource[];
   /** Where a human sees the open issues of this run's SonarQube project, when SonarQube is configured. */
   sonarProjectUrl?: string;
+  /** The SonarQube project's key, when SonarQube is configured. */
+  sonarProject?: string;
   /** Removes what the run created on outside servers; returns a note when a human has to finish that. */
   release(): Promise<string | undefined>;
 }
@@ -195,5 +199,5 @@ export interface DocReference {
 export interface ICleanupReportWriter {
   plan(run: CleanupRun, batches: CleanupBatch[]): string;
   /** `docs` maps a security finding's rule to what the pulled docs say about it; undefined when no docs are pulled. */
-  report(run: CleanupRun, batches: CleanupBatch[], docs?: Map<string, DocReference>): string;
+  report(run: CleanupRun, batches: CleanupBatch[], docs?: Map<string, DocReference>, sonarProject?: string): string;
 }

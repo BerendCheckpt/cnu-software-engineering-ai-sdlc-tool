@@ -4,6 +4,9 @@
 batches:
   maxFindings: 10
   maxFiles: 5
+  # A batch is done only when every one of its findings is gone. It may be checked this many times; when the last
+  # check still fails, the run stops and the engineer chooses: retry, or a PR with an issue per finding left.
+  maxTries: 5
   # Most urgent first. A category left out is not planned at all.
   order: [security, bug, dependency, maintainability, readability]
 
