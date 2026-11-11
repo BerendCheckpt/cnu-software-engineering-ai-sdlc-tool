@@ -6,7 +6,7 @@ import { dispatch, parse } from "../src/adapters/cli/dispatch.js";
 import { type App, appPaths, createApp } from "../src/adapters/composition.js";
 import type { Finding } from "../src/domain/cleanup.js";
 import { EvaluationResult } from "../src/domain/evaluation.js";
-import { dayStamp } from "../src/domain/progress.js";
+import { timeStamp } from "../src/domain/progress.js";
 import type { CleanupGates, ICleanupGateFactory, IFormatter, IPullRequestPublisher, ISandbox } from "../src/ports/services.js";
 import { gitRepo, tempDir } from "./helpers.js";
 
@@ -81,7 +81,8 @@ describe("clean-up flow", () => {
   let mirror: string;
   let sandbox: Sandbox;
   let publisher: FakePublisher;
-  const branch = `cleanup/${dayStamp()}`;
+  const now = new Date(2026, 10, 9, 14, 30, 5);
+  const branch = `cleanup/${timeStamp(now)}`;
 
   beforeAll(() => {
     for (const role of ["AUTHOR", "COMMITTER"]) {
@@ -117,7 +118,7 @@ describe("clean-up flow", () => {
   };
 
   it("runs every batch without a human, flags gated changes, and ends in a PR ranked by severity", async () => {
-    const analysis = await app.cleanup.analyze.execute("shop");
+    const analysis = await app.cleanup.analyze.execute("shop", undefined, now);
     const { run } = analysis;
     expect(run.branch).toBe(branch);
     expect(analysis.batches.map((b) => b.category)).toEqual(["format", "maintainability", "maintainability", "maintainability"]);
@@ -172,16 +173,18 @@ describe("clean-up flow", () => {
 
     expect(app.cleanup.status.execute(run.id).run.state).toBe("pushed");
     await expect(app.cleanup.finish.execute(run.id)).rejects.toThrow(/pushed/);
-    await expect(app.cleanup.analyze.execute("shop")).rejects.toThrow(/already ran on shop as branch/);
+    await expect(app.cleanup.analyze.execute("shop", undefined, now)).rejects.toThrow(/already ran on shop as branch/);
+    const later = await app.cleanup.analyze.execute("shop", undefined, new Date(now.getTime() + 60_000));
+    expect(later.run.branch).not.toBe(branch);
   }, 30_000);
 
   it("refuses a branch that already exists in the repository or on the remote", async () => {
     execFileSync("git", ["branch", branch], { cwd: mirror });
-    await expect(app.cleanup.analyze.execute("shop")).rejects.toThrow(/already exists in the repository/);
+    await expect(app.cleanup.analyze.execute("shop", undefined, now)).rejects.toThrow(/already exists in the repository/);
 
     execFileSync("git", ["push", "--quiet", "origin", `${branch}:${branch}`], { cwd: mirror });
     execFileSync("git", ["branch", "-D", branch], { cwd: mirror });
-    await expect(app.cleanup.analyze.execute("shop")).rejects.toThrow(/already exists on the remote/);
+    await expect(app.cleanup.analyze.execute("shop", undefined, now)).rejects.toThrow(/already exists on the remote/);
   });
 
   it("reports every step to the named session and to its log", async () => {
@@ -197,7 +200,8 @@ describe("clean-up flow", () => {
   it("names the session after the command and the run when none is given, and logs a failure", async () => {
     const analyzed = await dispatch(app, "cleanup", parse(["cleanup", "analyze", "shop"]).args, undefined);
     const runId = analyzed.remember?.run;
-    const session = `cleanup-${runId}-${dayStamp()}`;
+    const session = analyzed.text.split("\n")[0]!.match(/^session: (\S+) /)![1]!;
+    expect(session).toMatch(new RegExp(`^cleanup-${runId}-\\d{2}-\\d{2}-\\d{4}-\\d{6}$`));
     expect(analyzed.text.split("\n")[0]).toBe(`session: ${session} (follow it with: aisdlc watch ${session})`);
     expect(app.sessionLog.latest()).toBe(session);
 

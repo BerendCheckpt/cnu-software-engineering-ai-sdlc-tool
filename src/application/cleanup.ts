@@ -11,7 +11,7 @@ import type { DiffClassifier } from "../domain/diffClassifier.js";
 import { DomainError } from "../domain/errors.js";
 import type { EvaluationResult } from "../domain/evaluation.js";
 import { PathGuard } from "../domain/pathGuard.js";
-import { dayStamp } from "../domain/progress.js";
+import { timeStamp } from "../domain/progress.js";
 import type {
   DocReference, ICleanupGateFactory, ICleanupReportWriter, IDependencyRestorer, IFormatter, IGitWorkspace, IProgress,
   IPullRequestPublisher, IRepoMirror, ISandbox,
@@ -97,7 +97,7 @@ export function newRunId(): string {
 }
 
 /**
- * Copies a mirror into a workspace on the run's one branch, `cleanup/DD-MM-YYYY`, measures it and writes the plan.
+ * Copies a mirror into a workspace on the run's one branch, `cleanup/DD-MM-YYYY-HHmmss`, measures it and writes the plan.
  * The plan starts right away (automode): the pull request is where a human reviews the result.
  */
 export class AnalyzeRepository {
@@ -119,7 +119,7 @@ export class AnalyzeRepository {
       throw new DomainError(`No mirror or linked folder ${repository}. Link a folder you pulled with: repo link <folder>, ` +
         "or request a clone with: repo add <https-url>");
     }
-    const branch = `cleanup/${dayStamp(now)}`;
+    const branch = `cleanup/${timeStamp(now)}`;
     const earlier = this.store.runOnBranch(repository, branch);
     if (earlier) {
       throw new DomainError(`Clean-up ${earlier.id} already ran on ${repository} as branch ${branch}: ` +

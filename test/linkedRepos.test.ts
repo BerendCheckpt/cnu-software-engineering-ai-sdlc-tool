@@ -99,7 +99,7 @@ describe("a repository folder the engineer already pulled", () => {
 
   it("analyzes a clean-up from the current folder, and its branch pushes to the folder's own origin", async () => {
     const result = await run(["cleanup", "analyze"], pulled);
-    expect(result.text).toMatch(/^session: cleanup-[0-9a-f]{8}-\d\d-\d\d-\d{4} .*\nusing linked repository Shop-App/);
+    expect(result.text).toMatch(/^session: cleanup-[0-9a-f]{8}-\d\d-\d\d-\d{4}-\d{6} .*\nusing linked repository Shop-App/);
     const runId = result.remember?.run;
     expect(runId).toBeDefined();
     expect(git(path.join(home, "work", "cleanup", runId!, "repo"), "remote", "get-url", "origin")).toBe("https://github.com/org/shop.git");
