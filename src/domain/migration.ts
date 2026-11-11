@@ -8,6 +8,19 @@ export interface MigrationPath {
   targetDocs: string[];
   /** An official tool that does part of the work, such as `ng update`. */
   tool?: string;
+  /**
+   * The agent that does this migration instead of a plan, such as `cnu:shiva`. Only the retailer-plugin pair may
+   * name one; its grounding is that agent, so the path needs no official docs.
+   */
+  agent?: string;
+}
+
+/** The one pair a migration may be delegated to an agent for: legacy retailer plugins to the new plugin repos. */
+export const RETAILER_PLUGIN_PAIR = { from: "ckp-retailerplugin", to: "cnu-retailerplugin" } as const;
+
+/** Whether `from -> to` is the retailer-plugin pair, in any case. */
+export function isRetailerPluginPair(from: string, to: string): boolean {
+  return from.toLowerCase() === RETAILER_PLUGIN_PAIR.from && to.toLowerCase() === RETAILER_PLUGIN_PAIR.to;
 }
 
 /** What a migration plan leaves out, from `config/noise.yaml`. Everything is compared case-insensitively. */
@@ -45,6 +58,8 @@ export interface MigrationStep {
 export type MigrationOutcome =
   | { kind: "skill"; skill: MigrationSkill }
   | { kind: "escalate"; reason: string }
+  /** The path is done by an agent, not planned here: the engineer runs that agent. */
+  | { kind: "delegate"; agent: string; path: MigrationPath }
   | { kind: "docs-missing"; missing: string[]; approvalIds: string[] }
   | { kind: "repo-missing"; repository: string }
   | { kind: "plan"; path: MigrationPath; steps: MigrationStep[]; reportPath: string };

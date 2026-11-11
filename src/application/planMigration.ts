@@ -52,7 +52,7 @@ export interface MigrationRequest {
 
 /**
  * Makes the initial migration plan, without a model, and stops at the first missing precondition:
- * a crystallized skill wins; an unknown path or missing official docs go back to a human;
+ * a crystallized skill wins; a delegated path goes to its agent; an unknown path or missing official docs go back to a human;
  * an unmirrored repository needs its URL from a human.
  */
 export class PlanMigration {
@@ -79,6 +79,8 @@ export class PlanMigration {
     if (!migration) {
       return { kind: "escalate", reason: `No migration from ${from} to ${to} is grounded in official documentation.` };
     }
+    // An agent does this migration itself (it clones what it needs), so docs and the mirror are not checked.
+    if (migration.agent) return { kind: "delegate", agent: migration.agent, path: migration };
 
     const missing = [...migration.sourceDocs, ...migration.targetDocs].filter((id) => !this.docs.hasSource(id));
     if (missing.length) return this.requestMissingDocs(migration, missing);

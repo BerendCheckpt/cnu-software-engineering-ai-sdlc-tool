@@ -23,3 +23,11 @@ migrations:
     sourceDocs: [javascript-guide]
     targetDocs: [typescript-migrating-from-js]
     tool: "Add a tsconfig.json with allowJs and checkJs, then rename files to .ts one at a time, as the TypeScript guide describes."
+
+  # Legacy retailer plugins (CKP.RI.RetailerPlugIn.<Name>, Azure DevOps, .NET Framework 4.5) to the new plugin repos
+  # (checkpt-als/cnu-retailerplugin-<short>, .NET 10). No official guide exists: the cnu:shiva agent (cnu plugin) does
+  # this conversion, so aisdlc writes no plan and hands it over. Only this pair may name an agent.
+  # Remove the agent line to switch the hand-over off; the pair is then escalated like any unknown pair.
+  - from: ckp-retailerplugin
+    to: cnu-retailerplugin
+    agent: cnu:shiva
