@@ -1,4 +1,5 @@
 import { DomainError } from "./errors.js";
+import { isSonar, normalizeSeverity, SEVERITIES, type Severity } from "./quality.js";
 import type { EvaluationKind, TestCounts } from "./evaluation.js";
 
 /** Ordered from most to least urgent; the plan follows this order unless the policy says otherwise. */
@@ -22,6 +23,29 @@ export interface Finding {
  */
 export function findingKey(f: Finding): string {
   return [f.source, f.rule, f.file, f.message].join("|");
+}
+
+/**
+ * Which SonarQube findings a clean-up must fix, chosen when it starts: `verbose` every severity, `medium` MEDIUM and
+ * above, `high` HIGH and BLOCKER. Findings of other tools (secrets, vulnerable dependencies) are always required.
+ */
+export const CLEANUP_LEVELS = ["verbose", "medium", "high"] as const;
+export type CleanupLevel = (typeof CLEANUP_LEVELS)[number];
+
+const LEVEL_FLOOR: Record<CleanupLevel, Severity> = { verbose: "INFO", medium: "MEDIUM", high: "HIGH" };
+
+export function parseCleanupLevel(value: string | undefined): CleanupLevel {
+  const level = (value ?? "verbose").trim().toLowerCase();
+  if (!(CLEANUP_LEVELS as readonly string[]).includes(level)) {
+    throw new DomainError(`Unknown severity level ${value}. Use one of: ${CLEANUP_LEVELS.join(", ")}.`);
+  }
+  return level as CleanupLevel;
+}
+
+/** True when the clean-up must fix this finding at `level`; the others stay in SonarQube and are counted in the PR. */
+export function isRequired(f: Finding, level: CleanupLevel): boolean {
+  if (!isSonar(f)) return true;
+  return SEVERITIES.indexOf(normalizeSeverity(f.severity)) <= SEVERITIES.indexOf(LEVEL_FLOOR[level]);
 }
 
 /** Security concerns for the PR: security findings, and vulnerable dependencies the audits reported. */
@@ -57,8 +81,11 @@ export interface Snapshot {
 // ---------------------------------------------------------------------------------------------------------------
 
 export type BatchCategory = FindingCategory | "format";
-/** `escalated`: the model failed its checks too often; the change was reset and a human has the issue. */
-export type BatchStatus = "pending" | "in-progress" | "done" | "skipped" | "escalated";
+/**
+ * `waiting`: findings were still open after the last allowed try; the engineer decides to retry or escalate.
+ * `escalated`: the engineer chose a PR with issues for the findings left; a change that made nothing worse is committed.
+ */
+export type BatchStatus = "pending" | "in-progress" | "waiting" | "done" | "skipped" | "escalated";
 
 export interface BatchProps {
   runId: string;
@@ -98,6 +125,7 @@ export class CleanupBatch {
   get commitSha(): string | undefined { return this.props.commitSha; }
   get note(): string | undefined { return this.props.note; }
   get isOpen(): boolean { return this.props.status === "in-progress"; }
+  get isWaiting(): boolean { return this.props.status === "waiting"; }
   get isFinished(): boolean {
     return this.props.status === "done" || this.props.status === "skipped" || this.props.status === "escalated";
   }
@@ -128,11 +156,28 @@ export class CleanupBatch {
     this.props.note = reason;
   }
 
-  /** `where` is the escalation issue, or where its text is. */
-  escalate(where: string): void {
+  /** The last allowed try failed: the batch stops, with its change kept, until the engineer decides. */
+  waitForEngineer(): void {
     this.requireOpen();
+    this.props.status = "waiting";
+  }
+
+  /** The engineer gives the batch another set of tries. */
+  retry(): void {
+    this.require("waiting");
+    this.props.status = "in-progress";
+  }
+
+  /**
+   * The engineer chose a PR with issues for what is left. `where` lists the issues, or where their text is;
+   * `commitSha` is set when the batch's change made nothing worse and was committed.
+   */
+  escalate(where: string, commitSha?: string, gates: GateHit[] = this.props.gates): void {
+    this.require("waiting");
     this.props.status = "escalated";
     this.props.note = `escalated: ${where}`;
+    this.props.gates = commitSha ? gates : [];
+    if (commitSha) this.props.commitSha = commitSha;
   }
 
   toProps(): BatchProps {
@@ -174,6 +219,8 @@ export interface RunProps {
   reference: Snapshot;
   pullRequest?: string;
   createdAt: string;
+  /** Which SonarQube severities this run must fix; runs from before this setting are `verbose`. */
+  level?: CleanupLevel;
 }
 
 /** One clean-up of one repository, from the first measurement to a pushed branch. */
@@ -197,6 +244,9 @@ export class CleanupRun {
   get baseline(): Snapshot { return this.props.baseline; }
   get reference(): Snapshot { return this.props.reference; }
   get pullRequest(): string | undefined { return this.props.pullRequest; }
+  get level(): CleanupLevel { return this.props.level ?? "verbose"; }
+  /** SonarQube findings below the run's level: never planned, left in SonarQube and counted in the PR. */
+  get leftForLater(): Finding[] { return this.props.reference.findings.filter((f) => !isRequired(f, this.level)); }
 
   moveTo(next: RunState): void {
     if (this.props.state === next) return;

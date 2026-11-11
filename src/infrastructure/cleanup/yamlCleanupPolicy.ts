@@ -11,6 +11,7 @@ const Policy = z.object({
   batches: z.object({
     maxFindings: z.number().int().min(1).max(50),
     maxFiles: z.number().int().min(1).max(20),
+    maxTries: z.number().int().min(1).max(20).default(5),
     order: z.array(z.enum(FINDING_CATEGORIES)).min(1),
   }),
   gates: z.object({
@@ -25,6 +26,8 @@ export interface CleanupPolicy {
   limits: BatchLimits;
   order: FindingCategory[];
   patterns: GatePatterns;
+  /** Checks a batch gets before the engineer decides. */
+  maxTries: number;
 }
 
 /** Reads `config/cleanup.yaml`. A pattern that is not a valid regular expression stops the load. */
@@ -34,6 +37,7 @@ export function loadCleanupPolicy(file: string): CleanupPolicy {
   return {
     limits: { maxFindings: policy.batches.maxFindings, maxFiles: policy.batches.maxFiles },
     order: policy.batches.order,
+    maxTries: policy.batches.maxTries,
     patterns: {
       testFiles: compile(policy.gates.testFiles),
       dependencyFiles: compile(policy.gates.dependencyFiles),

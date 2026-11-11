@@ -12,10 +12,13 @@ name and the rules for fixing; follow those rules. Pass `--session <name>` on ev
 2. Read every file the batch names in one message, then make all of the batch's edits in one message. Edit only
    inside the printed workspace.
 3. `aisdlc cleanup check <run> --session <name>`.
-   - **committed** or **escalated**: the output already shows the next batch. Go to step 2.
-   - **not committed**: fix what it lists and check again. Never get around the attempt count.
-4. Stop when the output says all batches are handled. Do not run `finish`, `approve` or `deny`, and do not push,
-   commit or create branches yourself.
+   - **committed**: the output already shows the next batch. Go to step 2.
+   - **not committed**: fix every finding and problem it lists, whatever the severity, and check again. Never get
+     around the try count.
+   - **STOP, waits for the engineer**: the last try failed. Stop at once and reply; only the engineer chooses
+     between `cleanup retry` and `cleanup escalate`, and you run neither.
+4. Stop when the output says all batches are handled. Do not run `finish`, `retry`, `escalate`, `approve` or `deny`,
+   and do not push, commit or create branches yourself.
 
-Reply with one line per batch (number, committed / escalated with its link / skipped, findings fixed, flagged
-files), then the findings that are still open. Nothing else.
+Reply with one line per batch (number, committed / skipped, findings fixed, flagged files). If a batch waits for
+the engineer, end with `WAITING batch <n> (<category>)` and the findings still open, one per line. Nothing else.

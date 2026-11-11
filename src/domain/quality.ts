@@ -45,7 +45,7 @@ export class QualityPolicy {
   }
 }
 
-function isSonar(f: Finding): boolean {
+export function isSonar(f: Finding): boolean {
   return f.source.toLowerCase() === "sonar";
 }
 
@@ -98,7 +98,8 @@ export class FixLoop {
   get failures(): number { return this.props.attempts.filter(failed).length; }
   get last(): FixAttempt | undefined { return this.props.attempts.at(-1); }
 
-  record(attempt: FixAttempt, policy: QualityPolicy): FixVerdict {
+  /** `maxFixAttempts` overrides the policy's, for a task with its own budget such as a clean-up batch. */
+  record(attempt: FixAttempt, policy: QualityPolicy, maxFixAttempts = policy.maxFixAttempts): FixVerdict {
     if (this.props.state === "escalated") {
       throw new DomainError(`${this.subject} was escalated to a human (${this.props.escalation ?? "see the work folder"}).`);
     }
@@ -109,9 +110,9 @@ export class FixLoop {
     }
     this.props.state = "open";
     const failures = this.failures;
-    return failures > policy.maxFixAttempts
+    return failures > maxFixAttempts
       ? { kind: "escalate", failures }
-      : { kind: "fix-required", failures, maxFixAttempts: policy.maxFixAttempts };
+      : { kind: "fix-required", failures, maxFixAttempts };
   }
 
   escalated(where: string): void {
