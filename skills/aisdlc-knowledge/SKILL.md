@@ -38,6 +38,8 @@ Output is short by design. Do not read the knowledge database or the mirrors dir
 - the repository is not mirrored: if the engineer has it pulled, `aisdlc repo link <folder>` (no approval needed);
   otherwise ask for its git URL, then `aisdlc repo add <url>`, and stop until they approve;
 - escalated: tell the engineer there is no official documentation for this migration, and do not attempt it;
+- delegated to an agent (only `--from ckp-retailerplugin --to cnu-retailerplugin`, a legacy retailer plugin): do not
+  plan or convert it yourself; tell the engineer to run the named agent (`cnu:shiva`) for that retailer;
 - a plan: summarise the plan file for the engineer.
 
 ## Evaluating your solution

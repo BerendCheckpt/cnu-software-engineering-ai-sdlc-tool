@@ -284,7 +284,8 @@ export const COMMANDS: CliCommand[] = [
   },
   {
     name: "migrate",
-    usage: "migrate --from <net9|angular20|js> --to <net10|angular22|ts> --repo <mirror>   initial migration plan",
+    usage: "migrate --from <net9|angular20|js|ckp-retailerplugin> --to <net10|angular22|ts|cnu-retailerplugin> " +
+      "--repo <mirror>   initial migration plan, or the agent that does it",
     run: async (app, args) => {
       const repository = required(args, "repo");
       const note = await app.linkRepository.uncommittedNote(repository);

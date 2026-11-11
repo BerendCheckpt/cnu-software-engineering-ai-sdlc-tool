@@ -33,6 +33,9 @@ const CATALOG_YAML = `migrations:
     to: net11
     sourceDocs: [dotnet-9-compat]
     targetDocs: [dotnet-11-compat]
+  - from: ckp-retailerplugin
+    to: cnu-retailerplugin
+    agent: cnu:shiva
 `;
 
 describe("PlanMigration", () => {
@@ -77,6 +80,12 @@ describe("PlanMigration", () => {
   it("escalates a migration that is not grounded in official documentation", async () => {
     const outcome = await planner.execute({ from: "cobol", to: "net10", repository: "shop-api" });
     expect(outcome).toEqual({ kind: "escalate", reason: expect.stringContaining("No migration from cobol to net10") });
+  });
+
+  it("hands the retailer-plugin pair to its agent, without docs or a mirror, in any case", async () => {
+    const outcome = await planner.execute({ from: "CKP-RetailerPlugin", to: "cnu-retailerplugin", repository: "not-linked" });
+    expect(outcome).toMatchObject({ kind: "delegate", agent: "cnu:shiva" });
+    expect(approvals.pending()).toEqual([]);
   });
 
   it("asks a human to approve the missing docs, and downloads nothing itself", async () => {
@@ -229,6 +238,29 @@ Use \`System.Text.Json\` instead.`;
       expect(report).toContain("## Ignored as too common\n\n");
       expect(report).toContain("- hostbuilder");
     });
+  });
+});
+
+describe("YamlMigrationCatalog", () => {
+  const catalog = (yaml: string) => {
+    const file = path.join(tempDir(), "migrations.yaml");
+    writeFileSync(file, yaml);
+    return () => new YamlMigrationCatalog(file, path.join(tempDir(), "skills"));
+  };
+
+  it("refuses an agent on any pair other than the retailer-plugin pair", () => {
+    expect(catalog("migrations:\n  - { from: net9, to: net10, agent: cnu:shiva }\n"))
+      .toThrow(/Only the retailer-plugin pair may name an agent/);
+  });
+
+  it("still needs official docs for a pair without an agent", () => {
+    expect(catalog("migrations:\n  - { from: net9, to: net10 }\n")).toThrow(/needs sourceDocs and targetDocs/);
+  });
+
+  it("reads config/migrations.yaml, where only the retailer-plugin pair is delegated", () => {
+    const real = new YamlMigrationCatalog(path.join(process.cwd(), "config", "migrations.yaml"), tempDir());
+    expect(real.findPath("ckp-retailerplugin", "cnu-retailerplugin")?.agent).toBe("cnu:shiva");
+    expect(real.findPath("net9", "net10")?.agent).toBeUndefined();
   });
 });
 

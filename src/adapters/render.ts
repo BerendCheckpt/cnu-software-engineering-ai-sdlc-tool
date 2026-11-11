@@ -84,6 +84,9 @@ export class TextRenderer {
         return `A crystallized migration skill exists: ${outcome.skill.skillPath}`;
       case "escalate":
         return `Escalated to a human: ${outcome.reason}`;
+      case "delegate":
+        return `Migration ${outcome.path.from} -> ${outcome.path.to} is done by the ${outcome.agent} agent, not planned ` +
+          `here. Run ${outcome.agent} for the retailer; aisdlc writes no plan.`;
       case "docs-missing":
         return [`Official documentation is missing: ${outcome.missing.join(", ")}.`,
           `A human must approve: ${outcome.approvalIds.map((id) => `aisdlc approve ${id}`).join("; ")}`].join("\n");
