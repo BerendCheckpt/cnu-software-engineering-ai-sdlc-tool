@@ -94,7 +94,11 @@ export class TextRenderer {
         return `Repository ${outcome.repository} is not mirrored or linked. Ask the engineer for its local folder ` +
           "(aisdlc repo link <folder>) or its git URL (aisdlc repo add <url>).";
       case "plan":
-        return `Plan with ${outcome.steps.length} step(s): ${outcome.reportPath}`;
+      {
+        const count = (d: string) => outcome.steps.filter((s) => s.decision === d).length;
+        return `Plan with ${count("port")} step(s) to port, ${count("drop")} dropped, ` +
+          `${outcome.questions.length} open question(s): ${outcome.reportPath}`;
+      }
     }
   }
 }

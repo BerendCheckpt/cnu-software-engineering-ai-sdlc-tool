@@ -6,6 +6,7 @@ import { MarkdownChunker } from "../domain/markdownChunker.js";
 import {
   type MigrationOutcome, type MigrationPath, type MigrationStep, NO_NOISE_RULES, type NoiseRules,
 } from "../domain/migration.js";
+import { type OpenQuestion, QuestionIndex } from "../domain/openQuestion.js";
 import { PathGuard } from "../domain/pathGuard.js";
 import type { IMigrationCatalog, IRepoMirror } from "../ports/services.js";
 import type { IDocStore } from "../ports/stores.js";
@@ -88,8 +89,10 @@ export class PlanMigration {
     if (!this.mirror.exists(repository)) return { kind: "repo-missing", repository };
 
     const { steps, tooCommon } = await this.locateSteps(migration, repository);
-    const reportPath = this.writePlan(migration, repository, steps, tooCommon);
-    return { kind: "plan", path: migration, steps, reportPath };
+    const questions: OpenQuestion[] = steps.filter((s) => s.decision === "question")
+      .map((s, i) => ({ id: `Q${i + 1}`, status: "needs-attention", topic: s.note ?? s.heading }));
+    const reportPath = this.writePlan(migration, repository, steps, questions, tooCommon);
+    return { kind: "plan", path: migration, steps, questions, reportPath };
   }
 
   private requestMissingDocs(migration: MigrationPath, missing: string[]): MigrationOutcome {
@@ -105,34 +108,66 @@ export class PlanMigration {
   }
 
   /**
-   * One step per section of the target docs, and per linked item in a section, that names an API the repository
-   * uses. Left out: sections that repeat an earlier one word for word, sections of an area the repository does not
-   * use, and terms found in so many sections that they are wording rather than an API. A location belongs to the
-   * first step that finds it, so later sections that only repeat it add no step.
+   * One step per section of the target docs, and per linked item in a section, with a decision:
+   * - `port`: it names an API the repository uses. A location belongs to the first step that finds it, so later
+   *   sections that only repeat it add no step.
+   * - `drop`: one step per doc area the repository does not use, so a reader sees what was left out and why.
+   * - `question`: it names only terms found in so many sections that they cannot tell a change apart, and the
+   *   repository uses one of them. A human decides whether it applies.
+   * Left out: sections that repeat an earlier one word for word, and sections whose APIs the repository does not use.
    */
   private async locateSteps(migration: MigrationPath, repository: string) {
     const chunks = migration.targetDocs.flatMap((id) => this.docs.chunksOf(id));
     const tooCommon = this.tooCommon(chunks);
     const areas = new AreaGate(this.rules.areas, (markers) => this.mirror.uses(repository, markers));
     const seenSections = new Set<string>();
+    const droppedAreas = new Set<string>();
     const listed = new Set<string>();
     const steps: MigrationStep[] = [];
     for (const chunk of chunks) {
       const text = chunk.content.toLowerCase().replace(/\s+/g, " ");
       if (seenSections.has(text)) continue;
       seenSections.add(text);
-      if (!(await areas.uses(MarkdownChunker.areaOf(chunk.heading)))) continue;
+      const area = MarkdownChunker.areaOf(chunk.heading);
+      if (!(await areas.uses(area))) {
+        if (!droppedAreas.has(area.toLowerCase())) {
+          droppedAreas.add(area.toLowerCase());
+          steps.push({ heading: area, docUrl: chunk.url, locations: [], decision: "drop",
+            note: `The repository does not use ${area}.` });
+        }
+        continue;
+      }
 
       for (const candidate of this.candidates(chunk)) {
         const terms = this.extractor.extract(candidate.text, tooCommon);
-        if (!terms.length) continue;
+        if (!terms.length) {
+          const question = await this.questionFor(candidate, tooCommon, repository);
+          if (question) steps.push(question);
+          continue;
+        }
         const found = await this.mirror.search(repository, terms, LOCATIONS_PER_STEP + listed.size, candidate.minTerms);
         const locations = found.filter((l) => !listed.has(`${l.path}:${l.line}`)).slice(0, LOCATIONS_PER_STEP);
         locations.forEach((l) => listed.add(`${l.path}:${l.line}`));
-        if (locations.length) steps.push({ heading: candidate.heading, docUrl: candidate.docUrl, locations });
+        if (locations.length) steps.push({ heading: candidate.heading, docUrl: candidate.docUrl, locations, decision: "port" });
       }
     }
     return { steps, tooCommon: [...tooCommon].sort() };
+  }
+
+  /** A `question` step when a candidate names only too-common terms and the repository uses one of them. */
+  private async questionFor(candidate: Candidate, tooCommon: Set<string>, repository: string): Promise<MigrationStep | undefined> {
+    const common = this.extractor.extract(candidate.text).filter((t) => tooCommon.has(t.toLowerCase()));
+    if (!common.length) return undefined;
+    const found = await this.mirror.search(repository, common, 1);
+    if (!found.length) return undefined;
+    return {
+      heading: candidate.heading,
+      docUrl: candidate.docUrl,
+      locations: [],
+      decision: "question",
+      note: `${candidate.heading}: names only ${common.join(", ")}, which the repository uses but too many sections ` +
+        "name to tell this change apart. Check the section by hand and decide whether it applies.",
+    };
   }
 
   /**
@@ -162,8 +197,12 @@ export class PlanMigration {
     return new Set([...sections].filter(([, count]) => count >= threshold).map(([term]) => term));
   }
 
-  private writePlan(migration: MigrationPath, repository: string, steps: MigrationStep[], tooCommon: string[]): string {
+  private writePlan(
+    migration: MigrationPath, repository: string, steps: MigrationStep[], questions: OpenQuestion[], tooCommon: string[],
+  ): string {
     const file = this.work.resolve(path.join("migrations", `${migration.from}-to-${migration.to}-${repository}.md`));
+    const ported = steps.filter((s) => s.decision === "port");
+    const questionOf = new Map(steps.filter((s) => s.decision === "question").map((s, i) => [s, questions[i]!.id]));
     const lines = [
       `# Migration plan: ${migration.from} to ${migration.to} for ${repository}`,
       "",
@@ -171,9 +210,26 @@ export class PlanMigration {
       "A human reviews it before any change is made.",
       "",
       ...(migration.tool ? ["## Start with", "", migration.tool, ""] : []),
+      ...(questions.length ? [
+        "## Open questions",
+        "",
+        "The index below is authoritative for status. Answer each question before the migration starts.",
+        "",
+        ...QuestionIndex.render(questions),
+        "",
+      ] : []),
+      ...(steps.length ? [
+        "## Steps",
+        "",
+        "| Decision | Step | Locations |",
+        "|---|---|---|",
+        ...steps.map((s) => `| ${s.decision} | ${s.heading.replaceAll("|", "\\|")} | ` +
+          `${s.decision === "port" ? s.locations.length : s.decision === "question" ? questionOf.get(s) : s.note} |`),
+        "",
+      ] : []),
       "## Affected code",
       "",
-      ...(steps.length ? steps.flatMap((s) => [
+      ...(ported.length ? ported.flatMap((s) => [
         `### ${s.heading}`,
         "",
         `Source: ${s.docUrl}`,

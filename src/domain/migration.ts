@@ -1,3 +1,5 @@
+import type { OpenQuestion } from "./openQuestion.js";
+
 /** A migration path we know how to ground in official documentation. */
 export interface MigrationPath {
   from: string;
@@ -48,10 +50,19 @@ export interface CodeLocation {
   text: string;
 }
 
+/**
+ * What happens to a step: `port` changes the code at its locations, `drop` does not apply to this repository,
+ * `question` cannot be decided without a human.
+ */
+export type StepDecision = "port" | "drop" | "question";
+
 export interface MigrationStep {
   heading: string;
   docUrl: string;
   locations: CodeLocation[];
+  decision: StepDecision;
+  /** Why the step was dropped or what the question is; empty for a `port` step. */
+  note?: string;
 }
 
 /** What planning a migration led to. Anything other than `plan` stops and goes back to a human. */
@@ -62,4 +73,4 @@ export type MigrationOutcome =
   | { kind: "delegate"; agent: string; path: MigrationPath }
   | { kind: "docs-missing"; missing: string[]; approvalIds: string[] }
   | { kind: "repo-missing"; repository: string }
-  | { kind: "plan"; path: MigrationPath; steps: MigrationStep[]; reportPath: string };
+  | { kind: "plan"; path: MigrationPath; steps: MigrationStep[]; questions: OpenQuestion[]; reportPath: string };
