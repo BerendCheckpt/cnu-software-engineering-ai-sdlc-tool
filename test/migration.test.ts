@@ -7,7 +7,8 @@ import { PlanMigration } from "../src/application/planMigration.js";
 import { CodeTermExtractor } from "../src/domain/codeTermExtractor.js";
 import type { DocSource } from "../src/domain/docs.js";
 import { MarkdownChunker } from "../src/domain/markdownChunker.js";
-import { NO_NOISE_RULES, type NoiseRules } from "../src/domain/migration.js";
+import { type MigrationStep, NO_NOISE_RULES, type NoiseRules } from "../src/domain/migration.js";
+import { QuestionIndex } from "../src/domain/openQuestion.js";
 import { loadNoiseRules } from "../src/infrastructure/migration/yamlNoiseRules.js";
 import { GitRepoMirror } from "../src/infrastructure/git/gitRepoMirror.js";
 import { YamlMigrationCatalog } from "../src/infrastructure/migration/yamlMigrationCatalog.js";
@@ -118,7 +119,9 @@ describe("PlanMigration", () => {
       heading: "BinaryFormatter removed",
       docUrl: NET10.url,
       locations: [{ path: "src/Cache.cs", line: 1, text: "var formatter = new BinaryFormatter();" }],
+      decision: "port",
     }]);
+    expect(outcome.questions).toEqual([]);
     const plan = readFileSync(outcome.reportPath, "utf8");
     expect(plan).toContain("Set TargetFramework to net10.0.");
     expect(plan).toContain("`src/Cache.cs:1`");
@@ -187,11 +190,12 @@ Use \`System.Text.Json\` instead.`;
       if (outcome.kind !== "plan") throw new Error(`expected a plan, got ${outcome.kind}`);
       return outcome;
     };
+    const ported = (steps: MigrationStep[]) => steps.filter((s) => s.decision === "port");
     const headings = async (repo: string, files: Record<string, string>) =>
-      (await plan(repo, files)).steps.map((s) => s.heading);
+      ported((await plan(repo, files)).steps).map((s) => s.heading);
 
     it("keeps the real steps and finds their code outside lockfiles and editor or git config", async () => {
-      const { steps } = await plan("noisy-app", NOISY_REPO);
+      const steps = ported((await plan("noisy-app", NOISY_REPO)).steps);
       expect(steps.map((s) => s.heading))
         .toEqual(["BinaryFormatter removed", "Extensions › ProviderAliasAttribute moved to another assembly"]);
       expect(steps[0]!.locations.map((l) => `${l.path}:${l.line}`).sort())
@@ -237,6 +241,32 @@ Use \`System.Text.Json\` instead.`;
       const report = readFileSync(outcome.reportPath, "utf8");
       expect(report).toContain("## Ignored as too common\n\n");
       expect(report).toContain("- hostbuilder");
+    });
+
+    it("lists a doc area the repository does not use once, as a dropped step", async () => {
+      const { steps } = await plan("noisy-app", NOISY_REPO);
+      const dropped = steps.filter((s) => s.decision === "drop");
+      expect(dropped).toEqual([expect.objectContaining({ heading: "Blazor", locations: [], note: "The repository does not use Blazor." })]);
+    });
+
+    it("asks a question when a section names only too-common terms the repository uses", async () => {
+      const markdown = [1, 2, 3].map((n) => `## Change ${n}\n\nThe \`HostBuilder\` now sets \`Option${n}Flag\`.`)
+        .concat("## HostBuilder defaults\n\nThe `HostBuilder` defaults changed.").join("\n\n");
+      const outcome = await plan("host-app", { "src/Host.cs": "var builder = new HostBuilder();\n" }, markdown);
+
+      expect(outcome.steps).toEqual([expect.objectContaining({ heading: "HostBuilder defaults", decision: "question" })]);
+      expect(outcome.questions).toEqual([{ id: "Q1", status: "needs-attention", topic: expect.stringContaining("HostBuilder") }]);
+      const report = readFileSync(outcome.reportPath, "utf8");
+      expect(report).toContain("| question | HostBuilder defaults | Q1 |");
+      expect(QuestionIndex.parse(report)).toEqual({ kind: "index", questions: outcome.questions });
+    });
+
+    it("asks nothing when the repository does not use the too-common terms", async () => {
+      const markdown = [1, 2, 3].map((n) => `## Change ${n}\n\nThe \`HostBuilder\` now sets \`Option${n}Flag\`.`)
+        .concat("## HostBuilder defaults\n\nThe `HostBuilder` defaults changed.").join("\n\n");
+      const outcome = await plan("plain-app", { "src/App.cs": "class App { }\n" }, markdown);
+      expect(outcome.steps).toEqual([]);
+      expect(readFileSync(outcome.reportPath, "utf8")).not.toContain("## Open questions");
     });
   });
 });
