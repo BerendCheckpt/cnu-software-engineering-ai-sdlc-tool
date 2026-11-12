@@ -294,6 +294,29 @@ describe("YamlMigrationCatalog", () => {
   });
 });
 
+describe("YamlMigrationCatalog", () => {
+  const catalog = (yaml: string) => {
+    const file = path.join(tempDir(), "migrations.yaml");
+    writeFileSync(file, yaml);
+    return () => new YamlMigrationCatalog(file, path.join(tempDir(), "skills"));
+  };
+
+  it("refuses an agent on any pair other than the retailer-plugin pair", () => {
+    expect(catalog("migrations:\n  - { from: net9, to: net10, agent: cnu:shiva }\n"))
+      .toThrow(/Only the retailer-plugin pair may name an agent/);
+  });
+
+  it("still needs official docs for a pair without an agent", () => {
+    expect(catalog("migrations:\n  - { from: net9, to: net10 }\n")).toThrow(/needs sourceDocs and targetDocs/);
+  });
+
+  it("reads config/migrations.yaml, where only the retailer-plugin pair is delegated", () => {
+    const real = new YamlMigrationCatalog(path.join(process.cwd(), "config", "migrations.yaml"), tempDir());
+    expect(real.findPath("ckp-retailerplugin", "cnu-retailerplugin")?.agent).toBe("cnu:shiva");
+    expect(real.findPath("net9", "net10")?.agent).toBeUndefined();
+  });
+});
+
 describe("GitRepoMirror", () => {
   const mirrors = () => path.join(tempDir(), "mirrors");
 
