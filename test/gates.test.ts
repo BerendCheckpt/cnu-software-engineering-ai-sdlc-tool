@@ -7,6 +7,7 @@ import { EvaluationResult } from "../src/domain/evaluation.js";
 import { AngularTestEvaluator, summarize } from "../src/infrastructure/evaluation/angularTestEvaluator.js";
 import { SonarClient } from "../src/infrastructure/evaluation/sonarClient.js";
 import { SonarScannerEvaluator } from "../src/infrastructure/evaluation/sonarScannerEvaluator.js";
+import { NodeTestEvaluator, summarizeNodeTest } from "../src/infrastructure/evaluation/nodeTestEvaluator.js";
 import { VitestEvaluator } from "../src/infrastructure/evaluation/vitestEvaluator.js";
 import { ContainerProcessRunner } from "../src/infrastructure/process/containerProcessRunner.js";
 import { RunnerCatalog } from "../src/infrastructure/process/runnerCatalog.js";
@@ -57,6 +58,36 @@ describe("Angular test gate", () => {
     expect((await new AngularTestEvaluator(new RecordingRunner()).evaluate(tempDir())).isSkipped).toBe(true);
     const result = await new VitestEvaluator(new RecordingRunner()).evaluate(angularWorkspace());
     expect(result.digest).toMatch(/skipped: Angular project/);
+  });
+});
+
+function nodeWorkspace(test: string): string {
+  const workspace = tempDir();
+  writeFileSync(path.join(workspace, "package.json"), JSON.stringify({ scripts: { test } }));
+  return workspace;
+}
+
+describe("node:test gate", () => {
+  it("reads the spec and TAP summaries, including the failing tests", () => {
+    const spec = ["✖ refuses a closed slot (0.4ms)", "ℹ tests 12", "ℹ pass 11", "ℹ fail 1", "✖ failing tests:", "✖ refuses a closed slot (0.4ms)"].join("\n");
+    expect(summarizeNodeTest(spec)).toEqual({ total: 12, failed: 1, failing: ["refuses a closed slot"] });
+    expect(summarizeNodeTest("not ok 3 - parses a stream\n# tests 4\n# fail 1")).toEqual({ total: 4, failed: 1, failing: ["parses a stream"] });
+    expect(summarizeNodeTest("no summary")).toBeUndefined();
+  });
+
+  it("runs the workspace's test script with node --run when it uses node --test", async () => {
+    const runner = new RecordingRunner({ stdout: "ℹ tests 5\nℹ pass 5\nℹ fail 0\n" });
+    const result = await new NodeTestEvaluator(runner).evaluate(nodeWorkspace('node --test "test/*.test.mjs"'));
+    expect(result).toMatchObject({ kind: "node-test", passed: true, digest: "5/5 passed", metrics: { tests: { total: 5, failed: 0 } } });
+    expect(runner.calls[0]?.args).toEqual(["--run", "test"]);
+  });
+
+  it("fails on failing tests and skips projects that do not use node --test", async () => {
+    const failing = new RecordingRunner({ exitCode: 1, stdout: "✖ adds (1ms)\nℹ tests 2\nℹ fail 1\n" });
+    expect(await new NodeTestEvaluator(failing).evaluate(nodeWorkspace("node --test"))).toMatchObject({ passed: false, digest: "1/2 passed; failing: adds" });
+    expect((await new NodeTestEvaluator(new RecordingRunner()).evaluate(nodeWorkspace("vitest run"))).isSkipped).toBe(true);
+    expect((await new NodeTestEvaluator(new RecordingRunner()).evaluate(tempDir())).isSkipped).toBe(true);
+    expect((await new NodeTestEvaluator(new RecordingRunner()).evaluate(angularWorkspace())).isSkipped).toBe(true);
   });
 });
 

@@ -1,5 +1,6 @@
 import type { CleanupGates, ICleanupGateFactory, IProcessRunner } from "../../ports/services.js";
 import { AngularTestEvaluator } from "../evaluation/angularTestEvaluator.js";
+import { NodeTestEvaluator } from "../evaluation/nodeTestEvaluator.js";
 import type { SonarClient } from "../evaluation/sonarClient.js";
 import { SonarScannerEvaluator } from "../evaluation/sonarScannerEvaluator.js";
 import { VitestEvaluator } from "../evaluation/vitestEvaluator.js";
@@ -30,6 +31,7 @@ export class ContainerGateFactory implements ICleanupGateFactory {
         new XunitEvaluator(this.runners.offline),
         new VitestEvaluator(this.runners.offline),
         new AngularTestEvaluator(this.runners.offline),
+        new NodeTestEvaluator(this.runners.offline),
         new SonarScannerEvaluator(this.runners.scanner, this.sonar, projectKey),
       ],
       findingSources: [
