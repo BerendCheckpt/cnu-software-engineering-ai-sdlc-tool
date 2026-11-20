@@ -1,4 +1,4 @@
-export type EvaluationKind = "xunit" | "vitest" | "angular" | "sonar";
+export type EvaluationKind = "xunit" | "vitest" | "angular" | "node-test" | "sonar";
 
 const MAX_DIGEST_LENGTH = 1024;
 
