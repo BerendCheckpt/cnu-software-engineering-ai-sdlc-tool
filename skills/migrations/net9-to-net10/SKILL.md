@@ -57,6 +57,10 @@ migrated solution. These were the results when this skill was made:
 | angular | skipped | skipped: no angular.json |
 | sonar | passed | quality gate OK; coverage=0.0, bugs=0, code_smells=0, duplicated_lines_density=0.0, vulnerabilities=2, security_hotspots=0 |
 
+Passing the same tests is necessary, not sufficient. Where the repository has sample inputs (test data, recorded
+requests, fixture files), run them through the code before and after the migration: the output must match. A sample
+whose output changed goes back to the engineer, even when every test passes. Without samples, say so in the summary.
+
 ## Rules
 
 - A step that does not apply to this repository is skipped, and the summary says why.

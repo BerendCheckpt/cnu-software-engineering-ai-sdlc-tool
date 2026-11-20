@@ -1,9 +1,20 @@
-import { cpSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type App, appPaths, createApp } from "../src/adapters/composition.js";
 import { EvaluationResult } from "../src/domain/evaluation.js";
+import { SAMPLE_RULE } from "../src/infrastructure/reporting/skillWriter.js";
 import { gitRepo, tempDir } from "./helpers.js";
+
+describe("crystallized migration skills", () => {
+  it("each say that passing tests are not enough where samples exist, in the template's words", () => {
+    const root = path.resolve("skills", "migrations");
+    for (const skill of readdirSync(root)) {
+      const text = readFileSync(path.join(root, skill, "SKILL.md"), "utf8").replaceAll("\r\n", "\n");
+      expect(text, skill).toContain(SAMPLE_RULE.join("\n"));
+    }
+  });
+});
 
 const STEPS = "1. Set `<TargetFramework>` to `net10.0`.\n2. Update `Microsoft.*` packages to 10.x.\n";
 
@@ -53,6 +64,7 @@ describe("crystallizing a migration", () => {
     expect(draft).toContain("Set `<TargetFramework>` to `net10.0`");
     expect(draft).toContain("https://learn.microsoft.com/en-us/aspnet/core/migration/90-to-100");
     expect(draft).toContain("| xunit | passed | 12/12 passed |");
+    expect(draft).toContain(SAMPLE_RULE.join("\n"));
 
     // Nothing is written before the approval, and an edited draft is not what was reviewed.
     expect(() => app.crystallizeMigration.execute(approval)).toThrow(/pending, not approved/);
