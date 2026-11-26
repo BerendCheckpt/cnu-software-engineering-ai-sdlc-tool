@@ -7,8 +7,13 @@ import { type App, appPaths, createApp } from "../src/adapters/composition.js";
 import type { Finding } from "../src/domain/cleanup.js";
 import { EvaluationResult } from "../src/domain/evaluation.js";
 import { timeStamp } from "../src/domain/progress.js";
-import type { CleanupGates, ICleanupGateFactory, IFormatter, IPullRequestPublisher, ISandbox } from "../src/ports/services.js";
-import { gitRepo, tempDir } from "./helpers.js";
+import { GhCiChecks } from "../src/infrastructure/git/ghCiChecks.js";
+import { GitWorkspace } from "../src/infrastructure/git/gitWorkspace.js";
+import { ExecFileRunner } from "../src/infrastructure/process/execFileRunner.js";
+import type {
+  CiResult, CleanupGates, ICiChecks, ICleanupGateFactory, IFormatter, IProcessRunner, IPullRequestPublisher, ISandbox,
+} from "../src/ports/services.js";
+import { FakeIssueTracker, gitRepo, tempDir } from "./helpers.js";
 
 /** Stands in for Vitest: every `it("…")` is a test, and one whose line says BROKEN fails. */
 const fakeVitest = {
@@ -59,9 +64,21 @@ const trimmer: IFormatter = {
 
 class FakePublisher implements IPullRequestPublisher {
   opened: string[] = [];
-  async open(_workspace: string, branch: string) {
+  bases: string[] = [];
+  async open(_workspace: string, branch: string, baseBranch: string) {
     this.opened.push(branch);
+    this.bases.push(baseBranch);
     return "https://github.com/org/shop/pull/7";
+  }
+}
+
+/** Hands out the CI results a test lines up, one per read. */
+class FakeCiChecks implements ICiChecks {
+  results: CiResult[] = [];
+  async read(): Promise<CiResult> {
+    const next = this.results.shift();
+    if (!next) throw new Error("no CI result lined up");
+    return next;
   }
 }
 
@@ -81,6 +98,8 @@ describe("clean-up flow", () => {
   let mirror: string;
   let sandbox: Sandbox;
   let publisher: FakePublisher;
+  let ci: FakeCiChecks;
+  let tracker: FakeIssueTracker;
   const now = new Date(2026, 10, 9, 14, 30, 5);
   const branch = `cleanup/${timeStamp(now)}`;
 
@@ -105,8 +124,11 @@ describe("clean-up flow", () => {
 
     sandbox = new Sandbox();
     publisher = new FakePublisher();
+    ci = new FakeCiChecks();
+    tracker = new FakeIssueTracker();
     app = createApp(appPaths(home), {
-      cleanup: { sandbox, restorer: { restore: async () => {} }, gates: new FakeGates(), formatters: [trimmer], publisher },
+      cleanup: { sandbox, restorer: { restore: async () => {} }, gates: new FakeGates(), formatters: [trimmer], publisher, ci },
+      issueTracker: tracker,
     });
   });
 
@@ -154,16 +176,24 @@ describe("clean-up flow", () => {
     expect((await app.cleanup.check.execute(run.id)).kind).toBe("committed");
     expect((await app.cleanup.next.execute(run.id)).kind).toBe("finished");
 
+    // The branch the run started from is not on the remote; its default branch `trunk` is.
+    execFileSync("git", ["push", "--quiet", "origin", "HEAD:refs/heads/trunk"], { cwd: mirror });
+    execFileSync("git", ["symbolic-ref", "HEAD", "refs/heads/trunk"], { cwd: remote });
+
     // Finish: the PR body, the push of the one branch and the PR, with no approval in between.
     const finished = await app.cleanup.finish.execute(run.id);
     expect(finished.pullRequest).toBe("https://github.com/org/shop/pull/7");
     expect(publisher.opened).toEqual([branch]);
-    expect(execFileSync("git", ["branch", "--list"], { cwd: remote, encoding: "utf8" }).trim()).toBe(branch);
+    expect(publisher.bases).toEqual(["trunk"]);
+    expect(finished.note).toMatch(/is not on the remote; the pull request goes into its default branch trunk/);
+    expect(app.cleanup.status.execute(run.id).run.baseBranch).toBe("trunk");
+    expect(execFileSync("git", ["branch", "--list", branch], { cwd: remote, encoding: "utf8" }).trim()).toBe(branch);
     expect(execFileSync("git", ["log", "--format=%s", branch], { cwd: remote, encoding: "utf8" }))
       .toMatch(/batch 3 \(maintainability\)[\s\S]*batch 2 \(maintainability\)[\s\S]*batch 1 \(maintainability\)[\s\S]*formatters/);
 
     const report = readFileSync(finished.reportPath, "utf8");
     expect(report).toContain("3 of 3 findings fixed");
+    expect(report).toContain(`Branch \`${branch}\` into \`trunk\`.`);
     const changelog = report.slice(report.indexOf("### Changelog"), report.indexOf("### Security concerns"));
     expect(changelog.split("\n").filter((l) => l.startsWith("| HIGH") || l.startsWith("| MEDIUM")).map((l) => l.slice(2, 8)))
       .toEqual(["HIGH |", "MEDIUM", "MEDIUM"]);
@@ -244,6 +274,82 @@ describe("clean-up flow", () => {
     expect(await cli("check", runId)).toContain(`All batches are handled. Next: aisdlc cleanup finish ${runId}`);
   }, 30_000);
 
+  /** A run with every batch fixed and its PR opened. */
+  const pushedRun = async () => {
+    const { run } = await app.cleanup.analyze.execute("shop");
+    await app.cleanup.next.execute(run.id);
+    await app.cleanup.check.execute(run.id);
+    for (const op of ["+", "-", "*"]) {
+      await app.cleanup.next.execute(run.id);
+      edit(run.workspace, "src/calc.ts", (t) => t.replace(`a ${op} b; // TODO rename`, `a ${op} b;`));
+      expect((await app.cleanup.check.execute(run.id)).kind).toBe("committed");
+    }
+    await app.cleanup.finish.execute(run.id);
+    return run;
+  };
+  const failing = (log: string): CiResult => ({ state: "failing", failing: [{ name: "build", log }] });
+
+  it("iterates until the PR's CI is green: a failing check becomes the ci batch, and finish pushes to the open PR", async () => {
+    const run = await pushedRun();
+    const cli = async (...words: string[]) => (await dispatch(app, "cleanup", parse(["cleanup", ...words]).args, undefined)).text;
+
+    ci.results.push({ state: "pending" });
+    expect(await cli("ci", run.id)).toContain(`CI is still running on https://github.com/org/shop/pull/7`);
+    expect(app.cleanup.status.execute(run.id).run.state).toBe("pushed");
+
+    ci.results.push(failing("error TS2304: Cannot find name 'plus'."));
+    const fixing = await cli("ci", run.id);
+    expect(fixing).toMatch(/try 1 of 5[\s\S]*Batch 4 \(ci\)[\s\S]*CI check build failed\. End of its log:\nerror TS2304/);
+    expect(app.cleanup.status.execute(run.id).run.state).toBe("in-progress");
+    await expect(app.cleanup.ci.execute(run.id)).rejects.toThrow(/in-progress/);
+
+    edit(run.workspace, "src/calc.ts", (t) => `${t}export const plus = add;\n`);
+    expect(await cli("check", run.id)).toContain("All batches are handled");
+    await app.cleanup.finish.execute(run.id);
+    expect(publisher.opened).toHaveLength(1);
+    expect(execFileSync("git", ["log", "-1", "--format=%s", run.branch], { cwd: remote, encoding: "utf8" }).trim())
+      .toBe("Clean-up: fix the failing CI checks");
+
+    // CI fails again: the same ci batch opens with the check that fails now; the earlier try is shown.
+    ci.results.push(failing("error: lint"));
+    const again = await app.cleanup.ci.execute(run.id);
+    if (again.kind !== "fixing") throw new Error(again.kind);
+    expect([again.tries, again.history]).toEqual([2, ["try 1: still open build"]]);
+    expect(app.cleanup.status.execute(run.id).batches.filter((b) => b.category === "ci")).toHaveLength(1);
+    edit(run.workspace, "src/calc.ts", (t) => `${t}// lint\n`);
+    await app.cleanup.check.execute(run.id);
+    await app.cleanup.finish.execute(run.id);
+
+    ci.results.push({ state: "passing" });
+    expect(await cli("ci", run.id)).toContain("CI is green");
+    expect(await cli("status", run.id)).toContain("CI passing");
+  }, 60_000);
+
+  it("after the last failed CI round the ci batch waits for the engineer; once escalated, it is not reopened", async () => {
+    const run = await pushedRun();
+    for (let round = 1; round < 5; round++) {
+      ci.results.push(failing(`round ${round}`));
+      expect((await app.cleanup.ci.execute(run.id)).kind).toBe("fixing");
+      edit(run.workspace, "src/calc.ts", (t) => `${t}// round ${round}\n`);
+      expect((await app.cleanup.check.execute(run.id)).kind).toBe("committed");
+      await app.cleanup.finish.execute(run.id);
+    }
+    ci.results.push(failing("round 5"));
+    const waiting = await app.cleanup.ci.execute(run.id);
+    expect(waiting).toMatchObject({ kind: "waiting", tries: 5, diagnosis: ["build: still open in 5 of 5 tries"] });
+    expect((await app.cleanup.next.execute(run.id)).kind).toBe("waiting");
+
+    const escalated = await app.cleanup.escalate.execute(run.id);
+    expect(escalated.issues).toHaveLength(1);
+    expect(tracker.opened[0]?.title).toContain("build");
+    expect((await app.cleanup.next.execute(run.id)).kind).toBe("finished");
+    await app.cleanup.finish.execute(run.id);
+
+    ci.results.push(failing("round 6"));
+    expect(await app.cleanup.ci.execute(run.id)).toMatchObject({ kind: "escalated" });
+    expect(app.cleanup.status.execute(run.id).run.state).toBe("pushed");
+  }, 60_000);
+
   it("skips a batch by throwing its changes away", async () => {
     const { run } = await app.cleanup.analyze.execute("shop");
     await app.cleanup.next.execute(run.id);
@@ -252,5 +358,54 @@ describe("clean-up flow", () => {
     edit(run.workspace, "src/calc.ts", (t) => t.replace("add", "plus"));
     expect((await app.cleanup.skip.execute(run.id, "needs a product decision")).status).toBe("skipped");
     expect(readFileSync(path.join(run.workspace, "src", "calc.ts"), "utf8")).toContain("export const add");
+  });
+});
+
+describe("git and gh for the pull request", () => {
+  it("falls back to the remote's default branch when the base branch is gone or HEAD was detached", async () => {
+    const home = tempDir();
+    const remote = path.join(home, "remote.git");
+    execFileSync("git", ["init", "--quiet", "--bare", remote]);
+    const work = gitRepo(home, "work", { "a.txt": "a\n" });
+    execFileSync("git", ["remote", "add", "origin", remote], { cwd: work });
+    execFileSync("git", ["push", "--quiet", "origin", "HEAD:refs/heads/main"], { cwd: work });
+    execFileSync("git", ["symbolic-ref", "HEAD", "refs/heads/main"], { cwd: remote });
+    const git = new GitWorkspace(new ExecFileRunner());
+
+    expect(await git.resolveBase(work, "main")).toEqual({ base: "main" });
+    expect(await git.resolveBase(work, "release/gone")).toEqual(
+      { base: "main", note: "release/gone is not on the remote; the pull request goes into its default branch main" });
+    expect((await git.resolveBase(work, "HEAD")).base).toBe("main");
+  });
+
+  /** Answers `git remote get-url` and `gh` with canned output. */
+  const runner = (answers: Record<string, { exitCode?: number; stdout?: string; stderr?: string }>): IProcessRunner => ({
+    run: async (command, args) => {
+      const key = `${command} ${args.slice(0, 2).join(" ")}`;
+      const answer = command === "git" ? { stdout: "https://github.com/org/shop.git\n" } : answers[key] ?? {};
+      return { exitCode: answer.exitCode ?? 0, stdout: answer.stdout ?? "", stderr: answer.stderr ?? "" };
+    },
+  });
+  const pr = "https://github.com/org/shop/pull/7";
+
+  it("reads the PR's checks once, with the tail of each failed job's log", async () => {
+    const checks = (list: object[]) => ({ "gh pr checks": { exitCode: 1, stdout: JSON.stringify(list) } });
+    const log = Array.from({ length: 50 }, (_, i) => `build\tstep\tline ${i + 1}`).join("\n");
+    const failing = await new GhCiChecks(runner({
+      ...checks([{ name: "build", bucket: "fail", link: "https://github.com/org/shop/actions/runs/1/job/22" },
+        { name: "lint", bucket: "pass" }]),
+      "gh run view": { stdout: log },
+    })).read("w", pr);
+    if (failing.state !== "failing") throw new Error(failing.state);
+    expect(failing.failing[0]?.name).toBe("build");
+    expect(failing.failing[0]?.log.split("\n")).toHaveLength(40);
+    expect(failing.failing[0]?.log).toMatch(/line 50$/);
+
+    expect(await new GhCiChecks(runner(checks([{ name: "build", bucket: "pending" }]))).read("w", pr)).toEqual({ state: "pending" });
+    expect(await new GhCiChecks(runner(checks([{ name: "build", bucket: "pass" }, { name: "x", bucket: "skipping" }]))).read("w", pr))
+      .toEqual({ state: "passing" });
+    expect(await new GhCiChecks(runner({ "gh pr checks": { exitCode: 1, stderr: "no checks reported on the 'x' branch" } })).read("w", pr))
+      .toEqual({ state: "none" });
+    expect((await new GhCiChecks(runner({})).read("w", "Pushed x. Open the pull request by hand")).state).toBe("unsupported");
   });
 });

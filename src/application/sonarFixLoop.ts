@@ -10,6 +10,8 @@ export interface FixCheck {
   blocking: Finding[];
   reported: Finding[];
   problems: string[];
+  /** Files the change touched, kept so a later try can see what was already tried. */
+  changed?: string[];
 }
 
 export type LoopOutcome =

@@ -1,5 +1,5 @@
 import {
-  waitingMessage, type AnalysisResult, type CheckOutcome, type EscalationOutcome, type NextStep,
+  waitingMessage, type AnalysisResult, type CheckOutcome, type CiOutcome, type EscalationOutcome, type NextStep,
 } from "../application/cleanup.js";
 import type { EvaluationOutcome } from "../application/evaluation.js";
 import type { FindingWithCode } from "../application/snippets.js";
@@ -131,8 +131,9 @@ export class CleanupRenderer {
         return [
           `Batch ${step.batch.number} (${step.batch.category}), ${step.batch.findings.length} findings. ` +
             `Edit only in ${step.run.workspace}. Keep behaviour the same.`,
-          ...step.findings.map(({ finding: f, code }) =>
-            `\n## ${f.file}${f.line ? `:${f.line}` : ""} [${f.rule}] ${f.message}${code ? `\n${code}` : ""}`),
+          ...step.findings.map(({ finding: f, code }) => f.source === "ci"
+            ? `\n## CI check ${f.rule} failed. End of its log:\n${f.message}`
+            : `\n## ${f.file}${f.line ? `:${f.line}` : ""} [${f.rule}] ${f.message}${code ? `\n${code}` : ""}`),
           `\nWhen done: aisdlc cleanup check ${step.run.id}`,
         ].join("\n");
     }
@@ -153,14 +154,49 @@ export class CleanupRenderer {
       case "regression":
         return [`Batch ${outcome.batch.number} is not committed:`, ...outcome.problems.map((p) => `  - ${p}`),
           ...(outcome.open.length ? ["Findings of the batch still open:", ...this.text.findings(outcome.open)] : []),
+          ...this.triedBefore(outcome.history),
           `Try ${outcome.tries} of ${outcome.maxTries}. Fix every one and run: aisdlc cleanup check ${runId}` +
             (outcome.tries === outcome.maxTries - 1 ? ". If the next try fails, the engineer decides." : "")].join("\n");
       case "waiting":
         return [`Batch ${outcome.batch.number} is not committed after ${outcome.tries} tries. Its change is kept in the workspace.`,
           ...outcome.problems.map((p) => `  - ${p}`),
           ...(outcome.open.length ? ["Findings of the batch still open:", ...this.text.findings(outcome.open)] : []),
+          ...(outcome.diagnosis.length ? ["Diagnosis for the engineer:", ...outcome.diagnosis.map((d) => `  - ${d}`)] : []),
           `STOP. ${waitingMessage(runId, outcome.batch)}`].join("\n");
     }
+  }
+
+  ci(outcome: CiOutcome): string {
+    const { run } = outcome;
+    switch (outcome.kind) {
+      case "passing":
+        return `CI is green on ${run.pullRequest}. The clean-up is done.`;
+      case "pending":
+        return `CI is still running on ${run.pullRequest}. Wait until it has finished, then: aisdlc cleanup ci ${run.id}`;
+      case "none":
+        return `No CI checks are reported on ${run.pullRequest}. The clean-up is done.`;
+      case "unsupported":
+        return `${outcome.reason}.`;
+      case "escalated":
+        return `CI still fails on ${run.pullRequest}, but batch ${outcome.batch.number} (ci) was ${outcome.batch.status}: ` +
+          "the engineer handles it in the pull request.";
+      case "waiting":
+        return [`CI failed on ${run.pullRequest} on the last try (${outcome.tries}). The CI batch is not reopened.`,
+          ...(outcome.diagnosis.length ? ["Diagnosis for the engineer:", ...outcome.diagnosis.map((d) => `  - ${d}`)] : []),
+          `STOP. ${waitingMessage(run.id, outcome.batch)}`].join("\n");
+      case "fixing":
+        return [`CI failed on ${run.pullRequest}: try ${outcome.tries} of ${outcome.maxTries}.`,
+          ...this.triedBefore(outcome.history),
+          this.next(outcome.step),
+          `Once committed, push it to the pull request with: aisdlc cleanup finish ${run.id}`].join("\n");
+    }
+  }
+
+  /** Earlier failed tries of the batch: the next try must not repeat them. */
+  private triedBefore(history: string[]): string[] {
+    return history.length
+      ? ["Tried before (do not repeat these; change the approach):", ...history.map((h) => `  - ${h}`)]
+      : [];
   }
 
   escalation(outcome: EscalationOutcome, runId: string, next: NextStep): string {
@@ -177,7 +213,7 @@ export class CleanupRenderer {
   status(run: CleanupRun, batches: CleanupBatch[]): string {
     return [
       `Clean-up ${run.id} of ${run.repository}: ${run.state}, branch ${run.branch}` +
-        (run.pullRequest?.startsWith("https://") ? `, ${run.pullRequest}` : ""),
+        (run.pullRequest?.startsWith("https://") ? `, ${run.pullRequest}` : "") + (run.ci ? `, CI ${run.ci}` : ""),
       ...batches.map((b) => `  ${b.number} ${b.category}: ${b.status}${b.gates.length ? ` [${b.gates.map((g) => g.gate).join(", ")}]` : ""}` +
         `${b.note ? ` - ${b.note}` : ""}`),
     ].join("\n");

@@ -41,6 +41,11 @@ export class DiffClassifier {
       .map((c) => c.path));
     return hits;
   }
+
+  /** Every file the diff touches. */
+  files(diff: string): string[] {
+    return [...new Set(parseDiff(diff).map((c) => c.path))];
+  }
 }
 
 function matchesAny(text: string, patterns: RegExp[]): boolean {

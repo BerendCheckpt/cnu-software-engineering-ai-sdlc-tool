@@ -80,7 +80,8 @@ export interface Snapshot {
 
 // ---------------------------------------------------------------------------------------------------------------
 
-export type BatchCategory = FindingCategory | "format";
+/** `ci`: the checks that failed on the run's pull request; one such batch per run, reopened per failed CI round. */
+export type BatchCategory = FindingCategory | "format" | "ci";
 /**
  * `waiting`: findings were still open after the last allowed try; the engineer decides to retry or escalate.
  * `escalated`: the engineer chose a PR with issues for the findings left; a change that made nothing worse is committed.
@@ -133,6 +134,15 @@ export class CleanupBatch {
   start(baseSha: string): void {
     this.require("pending");
     this.props.status = "in-progress";
+    this.props.baseSha = baseSha;
+  }
+
+  /** The PR's CI failed again after this `ci` batch was committed: it opens with the checks that fail now. */
+  reopenForCi(findings: Finding[], baseSha: string): void {
+    if (this.props.category !== "ci") throw new DomainError(`Batch ${this.number} is not the CI batch.`);
+    this.require("done");
+    this.props.status = "in-progress";
+    this.props.findings = findings;
     this.props.baseSha = baseSha;
   }
 
@@ -202,9 +212,13 @@ const RUN_TRANSITIONS: Record<RunState, RunState[]> = {
   accepted: ["in-progress", "abandoned"],
   "in-progress": ["ready", "abandoned"],
   ready: ["pushed", "abandoned"],
-  pushed: [],
+  // A failing CI on the pull request reopens the run for its `ci` batch.
+  pushed: ["in-progress"],
   abandoned: [],
 };
+
+/** The pull request's CI at the last `cleanup ci`. */
+export type CiState = "passing" | "pending" | "failing" | "none" | "unsupported";
 
 export interface RunProps {
   id: string;
@@ -221,6 +235,8 @@ export interface RunProps {
   createdAt: string;
   /** Which SonarQube severities this run must fix; runs from before this setting are `verbose`. */
   level?: CleanupLevel;
+  /** The pull request's CI at the last `cleanup ci`; undefined until it was read. */
+  ci?: { state: CiState; checkedAt: string };
 }
 
 /** One clean-up of one repository, from the first measurement to a pushed branch. */
@@ -245,6 +261,7 @@ export class CleanupRun {
   get reference(): Snapshot { return this.props.reference; }
   get pullRequest(): string | undefined { return this.props.pullRequest; }
   get level(): CleanupLevel { return this.props.level ?? "verbose"; }
+  get ci(): CiState | undefined { return this.props.ci?.state; }
   /** SonarQube findings below the run's level: never planned, left in SonarQube and counted in the PR. */
   get leftForLater(): Finding[] { return this.props.reference.findings.filter((f) => !isRequired(f, this.level)); }
 
@@ -264,6 +281,17 @@ export class CleanupRun {
 
   acceptMeasurement(snapshot: Snapshot): void {
     this.props.reference = snapshot;
+  }
+
+  recordCi(state: CiState, at = new Date()): void {
+    this.requireState("pushed");
+    this.props.ci = { state, checkedAt: at.toISOString() };
+  }
+
+  /** The base branch is gone on the remote: the PR goes into `base` instead. */
+  retarget(base: string): void {
+    if (!base.trim()) throw new DomainError("A base branch needs a name.");
+    this.props.baseBranch = base;
   }
 
   published(pullRequest: string): void {

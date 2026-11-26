@@ -127,9 +127,15 @@ describe("the fix loop of a clean-up", () => {
     // The security batch: two failed tries, then it waits with its change kept.
     expect((await app.cleanup.next.execute(run.id)).kind).toBe("work");
     edit(run.workspace, (t) => `// touched\n${t}`);
-    expect((await app.cleanup.check.execute(run.id)).kind).toBe("regression");
+    expect(await app.cleanup.check.execute(run.id)).toMatchObject({ kind: "regression", history: [] });
     const waiting = await app.cleanup.check.execute(run.id);
-    expect(waiting).toMatchObject({ kind: "waiting", tries: 2 });
+    expect(waiting).toMatchObject({
+      kind: "waiting", tries: 2,
+      // Each try remembers what was still open and what it changed; the engineer gets a diagnosis per finding.
+      history: ["try 1: still open S2068 src/calc.ts:1; changed src/calc.ts"],
+      diagnosis: ["S2068 src/calc.ts:1: still open in 2 of 2 tries", "Files changed over the tries: src/calc.ts"],
+    });
+    expect(waiting.batch.attempts).toBe(2);
     expect(readFileSync(path.join(run.workspace, "src", "calc.ts"), "utf8")).toContain("// touched");
     expect(tracker.opened).toHaveLength(0);
     expect((await app.cleanup.next.execute(run.id)).kind).toBe("waiting");
@@ -138,8 +144,13 @@ describe("the fix loop of a clean-up", () => {
 
     // Retry: two more tries.
     expect(app.cleanup.retry.execute(run.id).kind).toBe("work");
-    expect(await app.cleanup.check.execute(run.id)).toMatchObject({ kind: "regression", tries: 1 });
-    expect((await app.cleanup.check.execute(run.id)).kind).toBe("waiting");
+    // The count starts again, but the tries before the retry are still shown.
+    const afterRetry = await app.cleanup.check.execute(run.id);
+    expect(afterRetry).toMatchObject({ kind: "regression", tries: 1 });
+    expect(afterRetry.kind === "regression" && afterRetry.history).toHaveLength(2);
+    const waitingAgain = await app.cleanup.check.execute(run.id);
+    expect(waitingAgain.kind).toBe("waiting");
+    expect(waitingAgain.batch.attempts).toBe(4);
 
     // PR and issues: the change made nothing worse, so it is committed, and the finding left gets an issue.
     const escalated = await app.cleanup.escalate.execute(run.id);
@@ -156,6 +167,8 @@ describe("the fix loop of a clean-up", () => {
     const { reportPath } = await app.cleanup.finish.execute(run.id);
     expect(readFileSync(reportPath, "utf8")).toContain("Escalated to a human");
     expect(readFileSync(reportPath, "utf8")).toContain("https://github.com/org/shop/issues/1");
+    // The batches table says how many checks each batch took.
+    expect(readFileSync(reportPath, "utf8")).toMatch(/\| 1 \| security \| 1 \| 4 \|[\s\S]*\| 2 \| maintainability \| 1 \| 1 \|/);
   }, 30_000);
 
   it("does not finish while a blocking issue is neither fixed nor escalated", async () => {
