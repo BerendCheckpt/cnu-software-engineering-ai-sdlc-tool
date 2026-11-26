@@ -21,7 +21,7 @@ export class TextRenderer {
     ];
     for (const e of m.evaluations) lines.push(`  ${this.evaluationLine(e)}`);
     for (const a of m.applications) {
-      lines.push(`  applied: ${a.repository}@${shortSha(a.commit)}${a.files.join(", ")}${a.pullRequestUrl ? ` ${a.pullRequestUrl}` : ""}`);
+      lines.push(`  applied: ${a.repository}@${shortSha(a.commit)} ${a.files.join(", ")}${a.pullRequestUrl ? ` ${a.pullRequestUrl}` : ""}`);
     }
     return lines.join("\n");
   }

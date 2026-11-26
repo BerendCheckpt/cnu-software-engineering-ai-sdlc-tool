@@ -9,8 +9,8 @@ import type { IIssueTracker } from "../../../ports/interfaces/quality/IIssueTrac
 import { errorMessage } from "../../../shared/helpers/errors/errorMessage.js";
 import { slugify } from "../../../shared/helpers/text/slugify.js";
 import { writeTextFile } from "../../../shared/helpers/workspace/writeTextFile.js";
-import type { FixCheck } from "../../interfaces/quality/FixCheck.js";
 import type { BatchLoopOutcome } from "../../types/quality/BatchLoopOutcome.js";
+import type { FixCheck } from "../../types/quality/FixCheck.js";
 import type { LoopOutcome } from "../../types/quality/LoopOutcome.js";
 
 /**
