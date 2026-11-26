@@ -1,9 +1,13 @@
-#!/usr/bin/env node
 import { createInterface } from "node:readline/promises";
-import { TerminalProgress } from "../../infrastructure/progress/progress.js";
-import { type App, createApp } from "../composition.js";
-import { dispatch, parse, usage, type Ask } from "./dispatch.js";
-import { InteractiveShell } from "./shell.js";
+import { TerminalProgress } from "../../infrastructure/classes/progress/TerminalProgress.js";
+import { errorMessage } from "../../shared/helpers/errors/errorMessage.js";
+import { InteractiveShell } from "../classes/cli/InteractiveShell.js";
+import { createApp } from "../composition.js";
+import { dispatch } from "../helpers/cli/dispatch.js";
+import { parse } from "../helpers/cli/parse.js";
+import { usage } from "../helpers/cli/usage.js";
+import type { Ask } from "../types/cli/Ask.js";
+import type { App } from "../types/composition/App.js";
 
 /** Asks once on the terminal, for a single command such as `aisdlc approve <id>`. */
 const askOnce: Ask = async (question) => {
@@ -68,7 +72,7 @@ async function main(): Promise<number> {
     console.log((await dispatch(app, command, args, interactive ? askOnce : undefined, process.cwd())).text);
     return 0;
   } catch (error) {
-    console.error((error as Error).message);
+    console.error(errorMessage(error));
     return 1;
   } finally {
     app.close();

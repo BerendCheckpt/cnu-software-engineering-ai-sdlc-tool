@@ -1,21 +1,23 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { RequestApproval } from "../src/application/approvals.js";
-import { RequestDocs } from "../src/application/docs.js";
-import { PlanMigration } from "../src/application/planMigration.js";
-import { CodeTermExtractor } from "../src/domain/codeTermExtractor.js";
-import type { DocSource } from "../src/domain/docs.js";
-import { MarkdownChunker } from "../src/domain/markdownChunker.js";
-import { type MigrationStep, NO_NOISE_RULES, type NoiseRules } from "../src/domain/migration.js";
-import { QuestionIndex } from "../src/domain/openQuestion.js";
-import { loadNoiseRules } from "../src/infrastructure/migration/yamlNoiseRules.js";
-import { GitRepoMirror } from "../src/infrastructure/git/gitRepoMirror.js";
-import { YamlMigrationCatalog } from "../src/infrastructure/migration/yamlMigrationCatalog.js";
-import { ExecFileRunner } from "../src/infrastructure/process/execFileRunner.js";
-import { openDatabase } from "../src/infrastructure/sqlite/database.js";
-import { SqliteApprovalStore } from "../src/infrastructure/sqlite/sqliteApprovalStore.js";
-import { SqliteDocStore } from "../src/infrastructure/sqlite/sqliteDocStore.js";
+import { RequestApproval } from "../src/application/classes/approval/RequestApproval.js";
+import { RequestDocs } from "../src/application/classes/docs/RequestDocs.js";
+import { PlanMigration } from "../src/application/classes/migration/PlanMigration.js";
+import { CodeTermExtractor } from "../src/domain/classes/knowledge/CodeTermExtractor.js";
+import type { DocSource } from "../src/domain/interfaces/docs/DocSource.js";
+import { MarkdownChunker } from "../src/domain/classes/docs/MarkdownChunker.js";
+import type { MigrationStep } from "../src/domain/interfaces/migration/MigrationStep.js";
+import { NO_NOISE_RULES } from "../src/domain/constants/migration/NO_NOISE_RULES.js";
+import type { NoiseRules } from "../src/domain/interfaces/migration/NoiseRules.js";
+import { QuestionIndex } from "../src/domain/classes/migration/QuestionIndex.js";
+import { loadNoiseRules } from "../src/infrastructure/helpers/migration/loadNoiseRules.js";
+import { GitRepoMirror } from "../src/infrastructure/classes/git/GitRepoMirror.js";
+import { YamlMigrationCatalog } from "../src/infrastructure/classes/migration/YamlMigrationCatalog.js";
+import { ExecFileRunner } from "../src/infrastructure/classes/process/ExecFileRunner.js";
+import { openDatabase } from "../src/infrastructure/helpers/sqlite/openDatabase.js";
+import { SqliteApprovalStore } from "../src/infrastructure/classes/sqlite/SqliteApprovalStore.js";
+import { SqliteDocStore } from "../src/infrastructure/classes/sqlite/SqliteDocStore.js";
 import { FakeCatalog, gitRepo, tempDir } from "./helpers.js";
 
 const source = (id: string, version: string): DocSource =>

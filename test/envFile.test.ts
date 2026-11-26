@@ -1,7 +1,7 @@
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadEnvFile } from "../src/infrastructure/config/envFile.js";
+import { loadEnvFile } from "../src/infrastructure/helpers/config/loadEnvFile.js";
 import { tempDir } from "./helpers.js";
 
 describe("loadEnvFile", () => {

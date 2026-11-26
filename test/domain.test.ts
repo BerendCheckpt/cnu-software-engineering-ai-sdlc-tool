@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { Approval } from "../src/domain/approval.js";
-import { EvaluationResult } from "../src/domain/evaluation.js";
-import { PathGuard } from "../src/domain/pathGuard.js";
-import { Solution } from "../src/domain/solution.js";
-import { TextNormalizer } from "../src/domain/textNormalizer.js";
-import { UrlPolicy } from "../src/domain/urlPolicy.js";
+import { Approval } from "../src/domain/classes/approval/Approval.js";
+import { EvaluationResult } from "../src/domain/classes/evaluation/EvaluationResult.js";
+import { PathGuard } from "../src/domain/classes/security/PathGuard.js";
+import { Solution } from "../src/domain/classes/solution/Solution.js";
+import { TextNormalizer } from "../src/domain/classes/knowledge/TextNormalizer.js";
+import { UrlPolicy } from "../src/domain/classes/security/UrlPolicy.js";
 
 describe("TextNormalizer", () => {
   const normalizer = new TextNormalizer();

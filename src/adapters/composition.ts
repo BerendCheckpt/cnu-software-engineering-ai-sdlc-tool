@@ -1,83 +1,87 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DecideApproval, RequestApproval } from "../application/approvals.js";
-import {
-  AnalyzeRepository, CheckBatch, CheckCi, CleanupFolders, CleanupStatus, EscalateBatch, FinishCleanup, MeasureWorkspace, NextBatch,
-  RetryBatch, SkipBatch,
-} from "../application/cleanup.js";
-import { CrystallizeFolders, CrystallizeMigration, RequestCrystallization } from "../application/crystallize.js";
-import { PullDocs, ReindexDocs, RequestDocs, SearchDocs } from "../application/docs.js";
-import {
-  EvaluateSolution, PrepareWorkspace, ReopenSolution, ReviseSolution, RunEvaluations, WriteReport,
-} from "../application/evaluation.js";
-import { LookupSolutions } from "../application/lookupSolutions.js";
-import { PlanMigration } from "../application/planMigration.js";
-import { BrowseCode, LinkRepository, MirrorRepository, RequestClone } from "../application/repositories.js";
-import { AcceptSuggestion, RejectSuggestion } from "../application/reviewSuggestion.js";
-import { AcceptSolution, ProposeSolution, RecordApplication } from "../application/solutionLifecycle.js";
-import { SonarFixLoop } from "../application/sonarFixLoop.js";
-import { CleanupPlanner } from "../domain/cleanupPlanner.js";
-import { DiffClassifier } from "../domain/diffClassifier.js";
-import { MarkdownChunker } from "../domain/markdownChunker.js";
-import { UrlPolicy } from "../domain/urlPolicy.js";
-import { ContainerGateFactory } from "../infrastructure/cleanup/containerGateFactory.js";
-import { DependencyRestorer } from "../infrastructure/cleanup/dependencyRestorer.js";
-import { loadCleanupPolicy } from "../infrastructure/cleanup/yamlCleanupPolicy.js";
-import { FileDocArchive } from "../infrastructure/docs/fileDocArchive.js";
-import { HttpDocFetcher } from "../infrastructure/docs/httpDocFetcher.js";
-import { loadEnvFile } from "../infrastructure/config/envFile.js";
-import { YamlSourceCatalog } from "../infrastructure/docs/yamlSourceCatalog.js";
-import { SonarClient } from "../infrastructure/evaluation/sonarClient.js";
-import { DotnetFormatter, EslintFormatter } from "../infrastructure/formatters/formatters.js";
-import { GhCiChecks } from "../infrastructure/git/ghCiChecks.js";
-import { GhIssueTracker } from "../infrastructure/git/ghIssueTracker.js";
-import { GhPullRequestPublisher } from "../infrastructure/git/ghPullRequestPublisher.js";
-import { GitRepoMirror } from "../infrastructure/git/gitRepoMirror.js";
-import { GitWorkspace } from "../infrastructure/git/gitWorkspace.js";
-import { YamlMigrationCatalog } from "../infrastructure/migration/yamlMigrationCatalog.js";
-import { loadNoiseRules } from "../infrastructure/migration/yamlNoiseRules.js";
-import { ContainerProcessRunner } from "../infrastructure/process/containerProcessRunner.js";
-import { ExecFileRunner } from "../infrastructure/process/execFileRunner.js";
-import { ProgressHub, SessionLog } from "../infrastructure/progress/progress.js";
-import { RunnerCatalog } from "../infrastructure/process/runnerCatalog.js";
-import { loadQualityPolicy } from "../infrastructure/quality/yamlQualityPolicy.js";
-import { CleanupReportWriter } from "../infrastructure/reporting/cleanupReportWriter.js";
-import { EscalationReportWriter } from "../infrastructure/reporting/escalationReportWriter.js";
-import { MarkdownReportWriter } from "../infrastructure/reporting/markdownReportWriter.js";
-import { MarkdownSkillWriter } from "../infrastructure/reporting/skillWriter.js";
-import { openDatabase } from "../infrastructure/sqlite/database.js";
-import { SqliteApprovalStore } from "../infrastructure/sqlite/sqliteApprovalStore.js";
-import { SqliteCleanupStore } from "../infrastructure/sqlite/sqliteCleanupStore.js";
-import { SqliteDocStore } from "../infrastructure/sqlite/sqliteDocStore.js";
-import { SqliteFixLoopStore } from "../infrastructure/sqlite/sqliteFixLoopStore.js";
-import { SqliteLinkedRepositoryStore } from "../infrastructure/sqlite/sqliteLinkedRepositoryStore.js";
-import { SqliteSolutionStore } from "../infrastructure/sqlite/sqliteSolutionStore.js";
-import type {
-  ICiChecks, ICleanupGateFactory, IDependencyRestorer, IEvaluator, IFormatter, IIssueTracker, IPullRequestPublisher,
-  ISandbox,
-} from "../ports/services.js";
+import { DecideApproval } from "../application/classes/approval/DecideApproval.js";
+import { RequestApproval } from "../application/classes/approval/RequestApproval.js";
+import { AnalyzeRepository } from "../application/classes/cleanup/AnalyzeRepository.js";
+import { CheckBatch } from "../application/classes/cleanup/CheckBatch.js";
+import { CheckCi } from "../application/classes/cleanup/CheckCi.js";
+import { CleanupFolders } from "../application/classes/cleanup/CleanupFolders.js";
+import { CleanupStatus } from "../application/classes/cleanup/CleanupStatus.js";
+import { EscalateBatch } from "../application/classes/cleanup/EscalateBatch.js";
+import { FinishCleanup } from "../application/classes/cleanup/FinishCleanup.js";
+import { MeasureWorkspace } from "../application/classes/cleanup/MeasureWorkspace.js";
+import { NextBatch } from "../application/classes/cleanup/NextBatch.js";
+import { RetryBatch } from "../application/classes/cleanup/RetryBatch.js";
+import { SkipBatch } from "../application/classes/cleanup/SkipBatch.js";
+import { PullDocs } from "../application/classes/docs/PullDocs.js";
+import { ReindexDocs } from "../application/classes/docs/ReindexDocs.js";
+import { RequestDocs } from "../application/classes/docs/RequestDocs.js";
+import { SearchDocs } from "../application/classes/docs/SearchDocs.js";
+import { EvaluateSolution } from "../application/classes/evaluation/EvaluateSolution.js";
+import { PrepareWorkspace } from "../application/classes/evaluation/PrepareWorkspace.js";
+import { ReopenSolution } from "../application/classes/evaluation/ReopenSolution.js";
+import { ReviseSolution } from "../application/classes/evaluation/ReviseSolution.js";
+import { RunEvaluations } from "../application/classes/evaluation/RunEvaluations.js";
+import { WriteReport } from "../application/classes/evaluation/WriteReport.js";
+import { CrystallizeFolders } from "../application/classes/migration/CrystallizeFolders.js";
+import { CrystallizeMigration } from "../application/classes/migration/CrystallizeMigration.js";
+import { PlanMigration } from "../application/classes/migration/PlanMigration.js";
+import { RequestCrystallization } from "../application/classes/migration/RequestCrystallization.js";
+import { SonarFixLoop } from "../application/classes/quality/SonarFixLoop.js";
+import { BrowseCode } from "../application/classes/repository/BrowseCode.js";
+import { LinkRepository } from "../application/classes/repository/LinkRepository.js";
+import { MirrorRepository } from "../application/classes/repository/MirrorRepository.js";
+import { RequestClone } from "../application/classes/repository/RequestClone.js";
+import { AcceptSolution } from "../application/classes/solution/AcceptSolution.js";
+import { AcceptSuggestion } from "../application/classes/solution/AcceptSuggestion.js";
+import { LookupSolutions } from "../application/classes/solution/LookupSolutions.js";
+import { ProposeSolution } from "../application/classes/solution/ProposeSolution.js";
+import { RecordApplication } from "../application/classes/solution/RecordApplication.js";
+import { RejectSuggestion } from "../application/classes/solution/RejectSuggestion.js";
+import { CleanupPlanner } from "../domain/classes/cleanup/CleanupPlanner.js";
+import { DiffClassifier } from "../domain/classes/cleanup/DiffClassifier.js";
+import { MarkdownChunker } from "../domain/classes/docs/MarkdownChunker.js";
+import { UrlPolicy } from "../domain/classes/security/UrlPolicy.js";
+import { ContainerGateFactory } from "../infrastructure/classes/cleanup/ContainerGateFactory.js";
+import { DependencyRestorer } from "../infrastructure/classes/cleanup/DependencyRestorer.js";
+import { FileDocArchive } from "../infrastructure/classes/docs/FileDocArchive.js";
+import { HttpDocFetcher } from "../infrastructure/classes/docs/HttpDocFetcher.js";
+import { YamlSourceCatalog } from "../infrastructure/classes/docs/YamlSourceCatalog.js";
+import { SonarClient } from "../infrastructure/classes/evaluation/SonarClient.js";
+import { DotnetFormatter } from "../infrastructure/classes/formatters/DotnetFormatter.js";
+import { EslintFormatter } from "../infrastructure/classes/formatters/EslintFormatter.js";
+import { GhCiChecks } from "../infrastructure/classes/git/GhCiChecks.js";
+import { GhIssueTracker } from "../infrastructure/classes/git/GhIssueTracker.js";
+import { GhPullRequestPublisher } from "../infrastructure/classes/git/GhPullRequestPublisher.js";
+import { GitRepoMirror } from "../infrastructure/classes/git/GitRepoMirror.js";
+import { GitWorkspace } from "../infrastructure/classes/git/GitWorkspace.js";
+import { YamlMigrationCatalog } from "../infrastructure/classes/migration/YamlMigrationCatalog.js";
+import { ContainerProcessRunner } from "../infrastructure/classes/process/ContainerProcessRunner.js";
+import { ExecFileRunner } from "../infrastructure/classes/process/ExecFileRunner.js";
+import { RunnerCatalog } from "../infrastructure/classes/process/RunnerCatalog.js";
+import { ProgressHub } from "../infrastructure/classes/progress/ProgressHub.js";
+import { SessionLog } from "../infrastructure/classes/progress/SessionLog.js";
+import { CleanupReportWriter } from "../infrastructure/classes/reporting/CleanupReportWriter.js";
+import { EscalationReportWriter } from "../infrastructure/classes/reporting/EscalationReportWriter.js";
+import { MarkdownReportWriter } from "../infrastructure/classes/reporting/MarkdownReportWriter.js";
+import { MarkdownSkillWriter } from "../infrastructure/classes/reporting/MarkdownSkillWriter.js";
+import { SqliteApprovalStore } from "../infrastructure/classes/sqlite/SqliteApprovalStore.js";
+import { SqliteCleanupStore } from "../infrastructure/classes/sqlite/SqliteCleanupStore.js";
+import { SqliteDocStore } from "../infrastructure/classes/sqlite/SqliteDocStore.js";
+import { SqliteFixLoopStore } from "../infrastructure/classes/sqlite/SqliteFixLoopStore.js";
+import { SqliteLinkedRepositoryStore } from "../infrastructure/classes/sqlite/SqliteLinkedRepositoryStore.js";
+import { SqliteSolutionStore } from "../infrastructure/classes/sqlite/SqliteSolutionStore.js";
+import { loadCleanupPolicy } from "../infrastructure/helpers/cleanup/loadCleanupPolicy.js";
+import { loadEnvFile } from "../infrastructure/helpers/config/loadEnvFile.js";
+import { loadNoiseRules } from "../infrastructure/helpers/migration/loadNoiseRules.js";
+import { loadQualityPolicy } from "../infrastructure/helpers/quality/loadQualityPolicy.js";
+import { openDatabase } from "../infrastructure/helpers/sqlite/openDatabase.js";
+import type { AppOptions } from "./interfaces/composition/AppOptions.js";
+import type { AppPaths } from "./interfaces/composition/AppPaths.js";
+import type { CleanupParts } from "./interfaces/composition/CleanupParts.js";
 
 /** The repository root: `dist/adapters/composition.js` → `../..`. Override with `AISDLC_HOME`. */
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-
-export interface AppPaths {
-  home: string;
-  database: string;
-  docs: string;
-  mirrors: string;
-  work: string;
-  sources: string;
-  migrations: string;
-  migrationSkills: string;
-  cleanupPolicy: string;
-  noise: string;
-  quality: string;
-  runners: string;
-  /** The interactive session's command history. */
-  history: string;
-  /** One `<session>.jsonl` of step events per session, for listeners such as `aisdlc watch`. */
-  sessions: string;
-}
 
 export function appPaths(home = process.env.AISDLC_HOME ?? PACKAGE_ROOT): AppPaths {
   return {
@@ -96,25 +100,6 @@ export function appPaths(home = process.env.AISDLC_HOME ?? PACKAGE_ROOT): AppPat
     history: path.join(home, "work", "shell-history.txt"),
     sessions: path.join(home, "work", "sessions"),
   };
-}
-
-export interface AppOptions {
-  /** Replaces the containerized gates of `eval` and `run_evaluations`; tests use this to run without Docker. */
-  evaluators?: IEvaluator[];
-  /** Replaces the containers of the clean-up; tests use this to run without Docker. */
-  cleanup?: CleanupParts;
-  /** Replaces `gh issue create` for escalations; tests use this to stay off GitHub. */
-  issueTracker?: IIssueTracker;
-}
-
-export interface CleanupParts {
-  sandbox: ISandbox;
-  restorer: IDependencyRestorer;
-  gates: ICleanupGateFactory;
-  formatters: IFormatter[];
-  publisher?: IPullRequestPublisher;
-  /** Replaces `gh pr checks`; tests use this to stay off GitHub. */
-  ci?: ICiChecks;
 }
 
 /** The composition root: the only place that knows every concrete class. */
@@ -243,5 +228,3 @@ function containerParts(paths: AppPaths, host: ExecFileRunner): CleanupParts {
 
 /** For gates given in `AppOptions.evaluators`: fakes that need no container and no packages. */
 const ON_HOST = { sandbox: { ensureAvailable: async () => {} }, restorer: { restore: async () => {} } };
-
-export type App = ReturnType<typeof createApp>;

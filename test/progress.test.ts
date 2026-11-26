@@ -1,10 +1,15 @@
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
-import { CleanupBatch, CleanupRun, type Finding } from "../src/domain/cleanup.js";
-import { timeStamp, sessionName } from "../src/domain/progress.js";
-import { bySeverity } from "../src/domain/quality.js";
-import { ProgressHub, SessionLog, TerminalProgress } from "../src/infrastructure/progress/progress.js";
-import { CleanupReportWriter } from "../src/infrastructure/reporting/cleanupReportWriter.js";
+import { CleanupBatch } from "../src/domain/classes/cleanup/CleanupBatch.js";
+import { CleanupRun } from "../src/domain/classes/cleanup/CleanupRun.js";
+import type { Finding } from "../src/domain/interfaces/cleanup/Finding.js";
+import { timeStamp } from "../src/domain/helpers/progress/timeStamp.js";
+import { sessionName } from "../src/domain/helpers/progress/sessionName.js";
+import { bySeverity } from "../src/domain/helpers/quality/bySeverity.js";
+import { ProgressHub } from "../src/infrastructure/classes/progress/ProgressHub.js";
+import { SessionLog } from "../src/infrastructure/classes/progress/SessionLog.js";
+import { TerminalProgress } from "../src/infrastructure/classes/progress/TerminalProgress.js";
+import { CleanupReportWriter } from "../src/infrastructure/classes/reporting/CleanupReportWriter.js";
 import { tempDir } from "./helpers.js";
 
 describe("session names", () => {

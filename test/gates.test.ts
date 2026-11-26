@@ -1,19 +1,22 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { RunEvaluations } from "../src/application/evaluation.js";
-import { ProposeSolution } from "../src/application/solutionLifecycle.js";
-import { EvaluationResult } from "../src/domain/evaluation.js";
-import { AngularTestEvaluator, summarize } from "../src/infrastructure/evaluation/angularTestEvaluator.js";
-import { SonarClient } from "../src/infrastructure/evaluation/sonarClient.js";
-import { SonarScannerEvaluator } from "../src/infrastructure/evaluation/sonarScannerEvaluator.js";
-import { NodeTestEvaluator, summarizeNodeTest } from "../src/infrastructure/evaluation/nodeTestEvaluator.js";
-import { VitestEvaluator } from "../src/infrastructure/evaluation/vitestEvaluator.js";
-import { ContainerProcessRunner } from "../src/infrastructure/process/containerProcessRunner.js";
-import { RunnerCatalog } from "../src/infrastructure/process/runnerCatalog.js";
-import { openDatabase } from "../src/infrastructure/sqlite/database.js";
-import { SqliteSolutionStore } from "../src/infrastructure/sqlite/sqliteSolutionStore.js";
-import type { IProcessRunner, ProcessResult } from "../src/ports/services.js";
+import { RunEvaluations } from "../src/application/classes/evaluation/RunEvaluations.js";
+import { ProposeSolution } from "../src/application/classes/solution/ProposeSolution.js";
+import { EvaluationResult } from "../src/domain/classes/evaluation/EvaluationResult.js";
+import { AngularTestEvaluator } from "../src/infrastructure/classes/evaluation/AngularTestEvaluator.js";
+import { summarize } from "../src/infrastructure/helpers/evaluation/summarize.js";
+import { SonarClient } from "../src/infrastructure/classes/evaluation/SonarClient.js";
+import { SonarScannerEvaluator } from "../src/infrastructure/classes/evaluation/SonarScannerEvaluator.js";
+import { NodeTestEvaluator } from "../src/infrastructure/classes/evaluation/NodeTestEvaluator.js";
+import { summarizeNodeTest } from "../src/infrastructure/helpers/evaluation/summarizeNodeTest.js";
+import { VitestEvaluator } from "../src/infrastructure/classes/evaluation/VitestEvaluator.js";
+import { ContainerProcessRunner } from "../src/infrastructure/classes/process/ContainerProcessRunner.js";
+import { RunnerCatalog } from "../src/infrastructure/classes/process/RunnerCatalog.js";
+import { openDatabase } from "../src/infrastructure/helpers/sqlite/openDatabase.js";
+import { SqliteSolutionStore } from "../src/infrastructure/classes/sqlite/SqliteSolutionStore.js";
+import type { IProcessRunner } from "../src/ports/interfaces/process/IProcessRunner.js";
+import type { ProcessResult } from "../src/ports/interfaces/process/ProcessResult.js";
 import { fixLoopFor, mirrorWithRemote, tempDir } from "./helpers.js";
 
 class RecordingRunner implements IProcessRunner {

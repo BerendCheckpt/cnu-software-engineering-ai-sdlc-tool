@@ -44,4 +44,4 @@ stateDiagram-v2
   crystallized --> deprecated
 ```
 
-The transitions are enforced in `Solution` itself (`src/domain/solution.ts`); an invalid transition throws.
+The transitions are enforced in `Solution` itself (`src/domain/classes/solution/Solution.ts`); an invalid transition throws.
