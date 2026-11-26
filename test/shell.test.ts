@@ -2,9 +2,12 @@ import { cpSync, existsSync } from "node:fs";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { dispatch, parse } from "../src/adapters/cli/dispatch.js";
-import { InteractiveShell, tokenize } from "../src/adapters/cli/shell.js";
-import { type App, appPaths, createApp } from "../src/adapters/composition.js";
+import { dispatch } from "../src/adapters/helpers/cli/dispatch.js";
+import { parse } from "../src/adapters/helpers/cli/parse.js";
+import { InteractiveShell } from "../src/adapters/classes/cli/InteractiveShell.js";
+import { tokenize } from "../src/adapters/helpers/cli/tokenize.js";
+import type { App } from "../src/adapters/types/composition/App.js";
+import { appPaths, createApp } from "../src/adapters/composition.js";
 import { tempDir } from "./helpers.js";
 
 describe("tokenize", () => {

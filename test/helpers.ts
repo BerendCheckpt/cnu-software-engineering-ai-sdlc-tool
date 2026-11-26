@@ -3,13 +3,16 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { SonarFixLoop } from "../src/application/sonarFixLoop.js";
-import type { DocSource } from "../src/domain/docs.js";
-import { QualityPolicy } from "../src/domain/quality.js";
-import { EscalationReportWriter } from "../src/infrastructure/reporting/escalationReportWriter.js";
-import { openDatabase } from "../src/infrastructure/sqlite/database.js";
-import { SqliteFixLoopStore } from "../src/infrastructure/sqlite/sqliteFixLoopStore.js";
-import type { IDocFetcher, IIssueTracker, IRepoMirror, ISourceCatalog } from "../src/ports/services.js";
+import { SonarFixLoop } from "../src/application/classes/quality/SonarFixLoop.js";
+import type { DocSource } from "../src/domain/interfaces/docs/DocSource.js";
+import { QualityPolicy } from "../src/domain/classes/quality/QualityPolicy.js";
+import { EscalationReportWriter } from "../src/infrastructure/classes/reporting/EscalationReportWriter.js";
+import { openDatabase } from "../src/infrastructure/helpers/sqlite/openDatabase.js";
+import { SqliteFixLoopStore } from "../src/infrastructure/classes/sqlite/SqliteFixLoopStore.js";
+import type { IDocFetcher } from "../src/ports/interfaces/docs/IDocFetcher.js";
+import type { IIssueTracker } from "../src/ports/interfaces/quality/IIssueTracker.js";
+import type { IRepoMirror } from "../src/ports/interfaces/repository/IRepoMirror.js";
+import type { ISourceCatalog } from "../src/ports/interfaces/docs/ISourceCatalog.js";
 
 export function tempDir(): string {
   return mkdtempSync(path.join(tmpdir(), "aisdlc-"));

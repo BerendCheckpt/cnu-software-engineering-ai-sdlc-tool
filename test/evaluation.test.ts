@@ -1,18 +1,22 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { PrepareWorkspace, RunEvaluations, WriteReport } from "../src/application/evaluation.js";
-import { ProposeSolution } from "../src/application/solutionLifecycle.js";
-import { EvaluationResult } from "../src/domain/evaluation.js";
-import { SonarEvaluator } from "../src/infrastructure/evaluation/sonarEvaluator.js";
-import { VitestEvaluator } from "../src/infrastructure/evaluation/vitestEvaluator.js";
-import { XunitEvaluator } from "../src/infrastructure/evaluation/xunitEvaluator.js";
-import { GitRepoMirror } from "../src/infrastructure/git/gitRepoMirror.js";
-import { ExecFileRunner } from "../src/infrastructure/process/execFileRunner.js";
-import { MarkdownReportWriter } from "../src/infrastructure/reporting/markdownReportWriter.js";
-import { openDatabase } from "../src/infrastructure/sqlite/database.js";
-import { SqliteSolutionStore } from "../src/infrastructure/sqlite/sqliteSolutionStore.js";
-import type { IEvaluator, IProcessRunner, ProcessResult } from "../src/ports/services.js";
+import { PrepareWorkspace } from "../src/application/classes/evaluation/PrepareWorkspace.js";
+import { RunEvaluations } from "../src/application/classes/evaluation/RunEvaluations.js";
+import { WriteReport } from "../src/application/classes/evaluation/WriteReport.js";
+import { ProposeSolution } from "../src/application/classes/solution/ProposeSolution.js";
+import { EvaluationResult } from "../src/domain/classes/evaluation/EvaluationResult.js";
+import { SonarEvaluator } from "../src/infrastructure/classes/evaluation/SonarEvaluator.js";
+import { VitestEvaluator } from "../src/infrastructure/classes/evaluation/VitestEvaluator.js";
+import { XunitEvaluator } from "../src/infrastructure/classes/evaluation/XunitEvaluator.js";
+import { GitRepoMirror } from "../src/infrastructure/classes/git/GitRepoMirror.js";
+import { ExecFileRunner } from "../src/infrastructure/classes/process/ExecFileRunner.js";
+import { MarkdownReportWriter } from "../src/infrastructure/classes/reporting/MarkdownReportWriter.js";
+import { openDatabase } from "../src/infrastructure/helpers/sqlite/openDatabase.js";
+import { SqliteSolutionStore } from "../src/infrastructure/classes/sqlite/SqliteSolutionStore.js";
+import type { IEvaluator } from "../src/ports/interfaces/evaluation/IEvaluator.js";
+import type { IProcessRunner } from "../src/ports/interfaces/process/IProcessRunner.js";
+import type { ProcessResult } from "../src/ports/interfaces/process/ProcessResult.js";
 import { fixLoopFor, gitRepo, mirrorWithRemote, tempDir } from "./helpers.js";
 
 /** Records calls and writes what the real tool would have written. */

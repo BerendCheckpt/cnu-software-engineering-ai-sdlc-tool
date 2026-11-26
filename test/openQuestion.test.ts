@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { type OpenQuestion, QuestionIndex } from "../src/domain/openQuestion.js";
+import type { OpenQuestion } from "../src/domain/interfaces/migration/OpenQuestion.js";
+import { QuestionIndex } from "../src/domain/classes/migration/QuestionIndex.js";
 
 // The formats Shiva writes in docs/conversion/QUESTIONS.md, trimmed to their shape.
 const STATUS_FORMAT = `# Conversion questions

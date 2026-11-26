@@ -2,17 +2,24 @@ import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { dispatch, parse } from "../src/adapters/cli/dispatch.js";
-import { type App, appPaths, createApp } from "../src/adapters/composition.js";
-import type { Finding } from "../src/domain/cleanup.js";
-import { EvaluationResult } from "../src/domain/evaluation.js";
-import { timeStamp } from "../src/domain/progress.js";
-import { GhCiChecks } from "../src/infrastructure/git/ghCiChecks.js";
-import { GitWorkspace } from "../src/infrastructure/git/gitWorkspace.js";
-import { ExecFileRunner } from "../src/infrastructure/process/execFileRunner.js";
-import type {
-  CiResult, CleanupGates, ICiChecks, ICleanupGateFactory, IFormatter, IProcessRunner, IPullRequestPublisher, ISandbox,
-} from "../src/ports/services.js";
+import { dispatch } from "../src/adapters/helpers/cli/dispatch.js";
+import { parse } from "../src/adapters/helpers/cli/parse.js";
+import type { App } from "../src/adapters/types/composition/App.js";
+import { appPaths, createApp } from "../src/adapters/composition.js";
+import type { Finding } from "../src/domain/interfaces/cleanup/Finding.js";
+import { EvaluationResult } from "../src/domain/classes/evaluation/EvaluationResult.js";
+import { timeStamp } from "../src/domain/helpers/progress/timeStamp.js";
+import { GhCiChecks } from "../src/infrastructure/classes/git/GhCiChecks.js";
+import { GitWorkspace } from "../src/infrastructure/classes/git/GitWorkspace.js";
+import { ExecFileRunner } from "../src/infrastructure/classes/process/ExecFileRunner.js";
+import type { CiResult } from "../src/ports/types/git/CiResult.js";
+import type { CleanupGates } from "../src/ports/interfaces/cleanup/CleanupGates.js";
+import type { ICiChecks } from "../src/ports/interfaces/git/ICiChecks.js";
+import type { ICleanupGateFactory } from "../src/ports/interfaces/cleanup/ICleanupGateFactory.js";
+import type { IFormatter } from "../src/ports/interfaces/cleanup/IFormatter.js";
+import type { IProcessRunner } from "../src/ports/interfaces/process/IProcessRunner.js";
+import type { IPullRequestPublisher } from "../src/ports/interfaces/git/IPullRequestPublisher.js";
+import type { ISandbox } from "../src/ports/interfaces/process/ISandbox.js";
 import { FakeIssueTracker, gitRepo, tempDir } from "./helpers.js";
 
 /** Stands in for Vitest: every `it("…")` is a test, and one whose line says BROKEN fails. */

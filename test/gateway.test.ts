@@ -3,10 +3,11 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type App, appPaths, createApp } from "../src/adapters/composition.js";
-import { FrontDoor } from "../src/adapters/frontdoor/index.js";
-import { ChatGateway } from "../src/adapters/gateway/chatGateway.js";
-import { EvaluationResult } from "../src/domain/evaluation.js";
+import type { App } from "../src/adapters/types/composition/App.js";
+import { appPaths, createApp } from "../src/adapters/composition.js";
+import { FrontDoor } from "../src/adapters/classes/frontdoor/FrontDoor.js";
+import { ChatGateway } from "../src/adapters/classes/gateway/ChatGateway.js";
+import { EvaluationResult } from "../src/domain/classes/evaluation/EvaluationResult.js";
 import { gitRepo, tempDir } from "./helpers.js";
 
 interface Received { url: string; authorization?: string; body: Record<string, unknown> }

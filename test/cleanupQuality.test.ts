@@ -2,10 +2,12 @@ import { execFileSync } from "node:child_process";
 import { cpSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { type App, appPaths, createApp } from "../src/adapters/composition.js";
-import type { Finding } from "../src/domain/cleanup.js";
-import { EvaluationResult } from "../src/domain/evaluation.js";
-import type { CleanupGates, ICleanupGateFactory } from "../src/ports/services.js";
+import type { App } from "../src/adapters/types/composition/App.js";
+import { appPaths, createApp } from "../src/adapters/composition.js";
+import type { Finding } from "../src/domain/interfaces/cleanup/Finding.js";
+import { EvaluationResult } from "../src/domain/classes/evaluation/EvaluationResult.js";
+import type { CleanupGates } from "../src/ports/interfaces/cleanup/CleanupGates.js";
+import type { ICleanupGateFactory } from "../src/ports/interfaces/cleanup/ICleanupGateFactory.js";
 import { FakeIssueTracker, gitRepo, tempDir } from "./helpers.js";
 
 /** Stands in for SonarQube: a HACK in `src/` is a HIGH security issue, a TODO a MEDIUM code smell. */

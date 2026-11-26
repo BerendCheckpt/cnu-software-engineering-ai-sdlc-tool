@@ -1,9 +1,10 @@
 import { cpSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type App, appPaths, createApp } from "../src/adapters/composition.js";
-import { EvaluationResult } from "../src/domain/evaluation.js";
-import { SAMPLE_RULE } from "../src/infrastructure/reporting/skillWriter.js";
+import type { App } from "../src/adapters/types/composition/App.js";
+import { appPaths, createApp } from "../src/adapters/composition.js";
+import { EvaluationResult } from "../src/domain/classes/evaluation/EvaluationResult.js";
+import { SAMPLE_RULE } from "../src/infrastructure/constants/reporting/SAMPLE_RULE.js";
 import { gitRepo, tempDir } from "./helpers.js";
 
 describe("crystallized migration skills", () => {

@@ -2,10 +2,12 @@ import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { dispatch, parse } from "../src/adapters/cli/dispatch.js";
-import { type App, appPaths, createApp } from "../src/adapters/composition.js";
-import { samePath } from "../src/domain/repository.js";
-import { EvaluationResult } from "../src/domain/evaluation.js";
+import { dispatch } from "../src/adapters/helpers/cli/dispatch.js";
+import { parse } from "../src/adapters/helpers/cli/parse.js";
+import type { App } from "../src/adapters/types/composition/App.js";
+import { appPaths, createApp } from "../src/adapters/composition.js";
+import { samePath } from "../src/domain/helpers/repository/samePath.js";
+import { EvaluationResult } from "../src/domain/classes/evaluation/EvaluationResult.js";
 import { gitRepo, tempDir } from "./helpers.js";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();

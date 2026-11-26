@@ -1,16 +1,22 @@
 import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { DecideApproval, RequestApproval } from "../src/application/approvals.js";
-import { PullDocs, ReindexDocs, RequestDocs, SearchDocs } from "../src/application/docs.js";
-import { BrowseCode, RequestClone, mirrorName } from "../src/application/repositories.js";
-import { MarkdownChunker } from "../src/domain/markdownChunker.js";
-import { FileDocArchive } from "../src/infrastructure/docs/fileDocArchive.js";
-import { GitRepoMirror } from "../src/infrastructure/git/gitRepoMirror.js";
-import { ExecFileRunner } from "../src/infrastructure/process/execFileRunner.js";
-import { openDatabase } from "../src/infrastructure/sqlite/database.js";
-import { SqliteApprovalStore } from "../src/infrastructure/sqlite/sqliteApprovalStore.js";
-import { SqliteDocStore } from "../src/infrastructure/sqlite/sqliteDocStore.js";
+import { DecideApproval } from "../src/application/classes/approval/DecideApproval.js";
+import { RequestApproval } from "../src/application/classes/approval/RequestApproval.js";
+import { PullDocs } from "../src/application/classes/docs/PullDocs.js";
+import { ReindexDocs } from "../src/application/classes/docs/ReindexDocs.js";
+import { RequestDocs } from "../src/application/classes/docs/RequestDocs.js";
+import { SearchDocs } from "../src/application/classes/docs/SearchDocs.js";
+import { BrowseCode } from "../src/application/classes/repository/BrowseCode.js";
+import { RequestClone } from "../src/application/classes/repository/RequestClone.js";
+import { mirrorName } from "../src/application/helpers/repository/mirrorName.js";
+import { MarkdownChunker } from "../src/domain/classes/docs/MarkdownChunker.js";
+import { FileDocArchive } from "../src/infrastructure/classes/docs/FileDocArchive.js";
+import { GitRepoMirror } from "../src/infrastructure/classes/git/GitRepoMirror.js";
+import { ExecFileRunner } from "../src/infrastructure/classes/process/ExecFileRunner.js";
+import { openDatabase } from "../src/infrastructure/helpers/sqlite/openDatabase.js";
+import { SqliteApprovalStore } from "../src/infrastructure/classes/sqlite/SqliteApprovalStore.js";
+import { SqliteDocStore } from "../src/infrastructure/classes/sqlite/SqliteDocStore.js";
 import { DOTNET_10, FakeCatalog, FakeFetcher, gitRepo, tempDir } from "./helpers.js";
 
 const PAGE = `# Breaking changes in .NET 10

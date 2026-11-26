@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { DecideApproval, RequestApproval } from "../src/application/approvals.js";
-import { LookupSolutions } from "../src/application/lookupSolutions.js";
-import { AcceptSuggestion, RejectSuggestion } from "../src/application/reviewSuggestion.js";
-import { AcceptSolution, ProposeSolution, RecordApplication } from "../src/application/solutionLifecycle.js";
-import { openDatabase } from "../src/infrastructure/sqlite/database.js";
-import { SqliteApprovalStore } from "../src/infrastructure/sqlite/sqliteApprovalStore.js";
-import { SqliteSolutionStore } from "../src/infrastructure/sqlite/sqliteSolutionStore.js";
+import { DecideApproval } from "../src/application/classes/approval/DecideApproval.js";
+import { RequestApproval } from "../src/application/classes/approval/RequestApproval.js";
+import { LookupSolutions } from "../src/application/classes/solution/LookupSolutions.js";
+import { AcceptSuggestion } from "../src/application/classes/solution/AcceptSuggestion.js";
+import { RejectSuggestion } from "../src/application/classes/solution/RejectSuggestion.js";
+import { AcceptSolution } from "../src/application/classes/solution/AcceptSolution.js";
+import { ProposeSolution } from "../src/application/classes/solution/ProposeSolution.js";
+import { RecordApplication } from "../src/application/classes/solution/RecordApplication.js";
+import { openDatabase } from "../src/infrastructure/helpers/sqlite/openDatabase.js";
+import { SqliteApprovalStore } from "../src/infrastructure/classes/sqlite/SqliteApprovalStore.js";
+import { SqliteSolutionStore } from "../src/infrastructure/classes/sqlite/SqliteSolutionStore.js";
 
 describe("knowledge use cases", () => {
   let store: SqliteSolutionStore;

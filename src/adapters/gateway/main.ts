@@ -1,8 +1,7 @@
-#!/usr/bin/env node
 import { createServer } from "node:http";
 import { createApp } from "../composition.js";
-import { FrontDoor } from "../frontdoor/index.js";
-import { ChatGateway } from "./chatGateway.js";
+import { FrontDoor } from "../classes/frontdoor/FrontDoor.js";
+import { ChatGateway } from "../classes/gateway/ChatGateway.js";
 
 // First, so the settings below can come from `.env`.
 const app = createApp();
