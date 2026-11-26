@@ -6,6 +6,8 @@ import type { DocChunk } from "../../../domain/interfaces/docs/DocChunk.js";
 import type { SolutionMatch } from "../../../domain/interfaces/knowledge/SolutionMatch.js";
 import type { CodeLocation } from "../../../domain/interfaces/migration/CodeLocation.js";
 import type { MigrationOutcome } from "../../../domain/types/migration/MigrationOutcome.js";
+import { findingLocation } from "../../../shared/helpers/findings/findingLocation.js";
+import { shortSha } from "../../../shared/helpers/text/shortSha.js";
 
 /**
  * Compact text for every adapter. Whatever a model reads costs tokens on every following turn,
@@ -19,7 +21,7 @@ export class TextRenderer {
     ];
     for (const e of m.evaluations) lines.push(`  ${this.evaluationLine(e)}`);
     for (const a of m.applications) {
-      lines.push(`  applied: ${a.repository}@${a.commit.slice(0, 8)} ${a.files.join(", ")}${a.pullRequestUrl ? ` ${a.pullRequestUrl}` : ""}`);
+      lines.push(`  applied: ${a.repository}@${shortSha(a.commit)}${a.files.join(", ")}${a.pullRequestUrl ? ` ${a.pullRequestUrl}` : ""}`);
     }
     return lines.join("\n");
   }
@@ -59,7 +61,7 @@ export class TextRenderer {
 
   findings(list: FindingWithCode[]): string[] {
     return list.map(({ finding: f, code }) =>
-      `## ${f.severity} ${f.file}${f.line ? `:${f.line}` : ""} [${f.rule}] ${f.message}${code ? `\n${code}` : ""}`);
+      `## ${f.severity} ${findingLocation(f)} [${f.rule}] ${f.message}${code ? `\n${code}` : ""}`);
   }
 
   chunks(chunks: DocChunk[]): string {

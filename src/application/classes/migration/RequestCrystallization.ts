@@ -1,15 +1,16 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import path from "node:path";
+import { existsSync } from "node:fs";
 import type { Approval } from "../../../domain/classes/approval/Approval.js";
 import { DomainError } from "../../../domain/classes/errors/DomainError.js";
-import type { EvaluationResult } from "../../../domain/classes/evaluation/EvaluationResult.js";
 import type { DocSource } from "../../../domain/interfaces/docs/DocSource.js";
 import type { ISourceCatalog } from "../../../ports/interfaces/docs/ISourceCatalog.js";
 import type { IMigrationCatalog } from "../../../ports/interfaces/migration/IMigrationCatalog.js";
 import type { ISkillWriter } from "../../../ports/interfaces/migration/ISkillWriter.js";
 import type { ISolutionStore } from "../../../ports/interfaces/solution/ISolutionStore.js";
+import { latestPerKind } from "../../../shared/helpers/evaluation/latestPerKind.js";
+import { writeTextFile } from "../../../shared/helpers/workspace/writeTextFile.js";
 import { hash } from "../../helpers/migration/hash.js";
 import { pair } from "../../helpers/migration/pair.js";
+import { requireSolution } from "../../helpers/solution/requireSolution.js";
 import type { RequestApproval } from "../approval/RequestApproval.js";
 import { CrystallizeFolders } from "./CrystallizeFolders.js";
 
@@ -28,8 +29,7 @@ export class RequestCrystallization {
   ) {}
 
   execute(solutionId: string, from: string, to: string, steps: string): { draftPath: string; approval: Approval } {
-    const solution = this.solutions.get(solutionId);
-    if (!solution) throw new DomainError(`No solution ${solutionId}.`);
+    const solution = requireSolution(this.solutions, solutionId);
     if (solution.state !== "accepted") throw new DomainError(`Solution ${solutionId} is ${solution.state}; only an accepted one can be crystallized.`);
     const migration = this.migrations.findPath(from, to);
     if (!migration) throw new DomainError(`No migration from ${from} to ${to} in migrations.yaml.`);
@@ -49,17 +49,10 @@ export class RequestCrystallization {
       path: migration, solution, steps, docs, evaluations, applications: this.solutions.applications(solutionId),
     });
     const draftPath = this.folders.draft(from, to);
-    mkdirSync(path.dirname(draftPath), { recursive: true });
-    writeFileSync(draftPath, markdown, "utf8");
+    writeTextFile(draftPath, markdown);
 
     const approval = this.requestApproval.execute("crystallize", `${solutionId}:${pair(from, to)}@${hash(markdown)}`,
       `crystallize ${pair(from, to)} from solution ${solutionId}; review ${draftPath}`);
     return { draftPath, approval };
   }
-}
-
-function latestPerKind(results: EvaluationResult[]): EvaluationResult[] {
-  const latest = new Map<string, EvaluationResult>();
-  for (const result of results) latest.set(result.kind, result);
-  return [...latest.values()];
 }

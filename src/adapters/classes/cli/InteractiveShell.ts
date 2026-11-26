@@ -1,8 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import { createInterface, type Interface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { TerminalProgress } from "../../../infrastructure/classes/progress/TerminalProgress.js";
+import { errorMessage } from "../../../shared/helpers/errors/errorMessage.js";
+import { shortSha } from "../../../shared/helpers/text/shortSha.js";
+import { writeTextFile } from "../../../shared/helpers/workspace/writeTextFile.js";
 import { COMMANDS } from "../../constants/cli/COMMANDS.js";
 import { OPTION_NAMES } from "../../constants/cli/OPTION_NAMES.js";
 import { dispatch } from "../../helpers/cli/dispatch.js";
@@ -84,7 +86,7 @@ export class InteractiveShell {
     try {
       words = tokenize(line);
     } catch (error) {
-      this.print((error as Error).message);
+      this.print(errorMessage(error));
       return true;
     }
     const [command, ...rest] = words;
@@ -112,7 +114,7 @@ export class InteractiveShell {
       this.print(result.text);
       this.remember(name!, args.positionals, args.options, result.remember);
     } catch (error) {
-      this.print((error as Error).message);
+      this.print(errorMessage(error));
     }
     return true;
   }
@@ -175,7 +177,7 @@ export class InteractiveShell {
   }
 
   private promptText(): string {
-    const focus = this.context.run ? ` run ${this.context.run}` : this.context.solution ? ` ${this.context.solution.slice(0, 8)}` : "";
+    const focus = this.context.run ? ` run ${this.context.run}` : this.context.solution ? ` ${shortSha(this.context.solution)}` : "";
     return `aisdlc${focus}> `;
   }
 
@@ -208,8 +210,7 @@ export class InteractiveShell {
     if (!file || !this.options.terminal) return;
     try {
       const history = (this.rl as unknown as { history?: string[] }).history ?? [];
-      mkdirSync(path.dirname(file), { recursive: true });
-      writeFileSync(file, [...history].reverse().join("\n"), "utf8");
+      writeTextFile(file, [...history].reverse().join("\n"));
     } catch {
       // History is a convenience; losing it never stops the session from closing.
     }

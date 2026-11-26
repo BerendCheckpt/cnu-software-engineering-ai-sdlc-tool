@@ -2,6 +2,7 @@ import { newRunId } from "../../../application/helpers/cleanup/newRunId.js";
 import { DomainError } from "../../../domain/classes/errors/DomainError.js";
 import { sessionName } from "../../../domain/helpers/progress/sessionName.js";
 import type { RepositoryEntry } from "../../../domain/interfaces/repository/RepositoryEntry.js";
+import { errorMessage } from "../../../shared/helpers/errors/errorMessage.js";
 import { CommandError } from "../../classes/cli/CommandError.js";
 import { COMMANDS } from "../../constants/cli/COMMANDS.js";
 import type { CommandResult } from "../../interfaces/cli/CommandResult.js";
@@ -41,7 +42,7 @@ export async function dispatch(
       ...(picked || result.remember ? { remember: { ...result.remember, ...(picked ? { repo: picked.name } : {}) } } : {}),
     };
   } catch (error) {
-    if (session) app.progress.emit(command, "failed", (error as Error).message.split("\n")[0]);
+    if (session) app.progress.emit(command, "failed", errorMessage(error).split("\n")[0]);
     throw error;
   }
 }

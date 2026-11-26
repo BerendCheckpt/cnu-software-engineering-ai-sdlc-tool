@@ -1,3 +1,4 @@
+import { findingLocation } from "../../../shared/helpers/findings/findingLocation.js";
 import { findingKey } from "../../helpers/cleanup/findingKey.js";
 import type { ComparisonOptions } from "../../interfaces/cleanup/ComparisonOptions.js";
 import type { Finding } from "../../interfaces/cleanup/Finding.js";
@@ -15,15 +16,7 @@ export class ValidPr {
 
   /** Findings that were open in the reference and are gone now. */
   static fixed(reference: Snapshot, current: Snapshot): Finding[] {
-    const remaining = countByKey(current.findings);
-    return reference.findings.filter((f) => {
-      const left = remaining.get(findingKey(f)) ?? 0;
-      if (left > 0) {
-        remaining.set(findingKey(f), left - 1);
-        return false;
-      }
-      return true;
-    });
+    return minus(reference.findings, current.findings);
   }
 
   private static gateProblems(reference: Snapshot, current: Snapshot, options: ComparisonOptions): string[] {
@@ -56,18 +49,23 @@ export class ValidPr {
   }
 
   private static newFindings(reference: Snapshot, current: Snapshot): string[] {
-    const before = countByKey(reference.findings);
-    const added = current.findings.filter((f) => {
-      const left = before.get(findingKey(f)) ?? 0;
-      if (left > 0) {
-        before.set(findingKey(f), left - 1);
-        return false;
-      }
-      return true;
-    });
-    return added.slice(0, 5).map((f) => `new ${f.source} finding ${f.rule} in ${f.file}${f.line ? `:${f.line}` : ""}`)
+    const added = minus(current.findings, reference.findings);
+    return added.slice(0, 5).map((f) => `new ${f.source} finding ${f.rule} in ${findingLocation(f)}`)
       .concat(added.length > 5 ? [`and ${added.length - 5} more new findings`] : []);
   }
+}
+
+/** The findings of `from` that `remove` does not have, counting duplicates: two equal findings need two to cancel. */
+function minus(from: Finding[], remove: Finding[]): Finding[] {
+  const remaining = countByKey(remove);
+  return from.filter((f) => {
+    const left = remaining.get(findingKey(f)) ?? 0;
+    if (left > 0) {
+      remaining.set(findingKey(f), left - 1);
+      return false;
+    }
+    return true;
+  });
 }
 
 function countByKey(findings: Finding[]): Map<string, number> {

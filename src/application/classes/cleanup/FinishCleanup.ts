@@ -13,6 +13,7 @@ import type { DocReference } from "../../../ports/interfaces/docs/DocReference.j
 import type { IGitWorkspace } from "../../../ports/interfaces/git/IGitWorkspace.js";
 import type { IPullRequestPublisher } from "../../../ports/interfaces/git/IPullRequestPublisher.js";
 import type { IProgress } from "../../../ports/interfaces/progress/IProgress.js";
+import { findingLocation } from "../../../shared/helpers/findings/findingLocation.js";
 import { requireRun } from "../../helpers/cleanup/requireRun.js";
 import type { FinishResult } from "../../interfaces/cleanup/FinishResult.js";
 import type { SearchDocs } from "../docs/SearchDocs.js";
@@ -80,7 +81,7 @@ export class FinishCleanup {
       .filter((f) => isSonar(f) && isRequired(f, run.level) && !escalated.has(findingKey(f)));
     if (open.length) {
       throw new DomainError(`${open.length} SonarQube issues at level ${run.level} are still open and not escalated: ` +
-        `${open.slice(0, 5).map((f) => `${f.rule} ${f.file}${f.line ? `:${f.line}` : ""}`).join(", ")}` +
+        `${open.slice(0, 5).map((f) => `${f.rule} ${findingLocation(f)}`).join(", ")}` +
         `${open.length > 5 ? ", …" : ""}. Add their category to config/cleanup.yaml and analyze again, or fix them.`);
     }
     if (!batches.some((b) => b.commitSha)) throw new DomainError("No batch was committed, so there is nothing to push.");

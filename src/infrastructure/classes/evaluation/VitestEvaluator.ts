@@ -3,6 +3,9 @@ import path from "node:path";
 import { EvaluationResult } from "../../../domain/classes/evaluation/EvaluationResult.js";
 import type { IEvaluator } from "../../../ports/interfaces/evaluation/IEvaluator.js";
 import type { IProcessRunner } from "../../../ports/interfaces/process/IProcessRunner.js";
+import { AISDLC_DIR } from "../../../shared/constants/workspace/AISDLC_DIR.js";
+import { testSummary } from "../../../shared/helpers/evaluation/testSummary.js";
+import { isAngularWorkspace } from "../../../shared/helpers/workspace/isAngularWorkspace.js";
 
 interface VitestJson {
   numTotalTests: number;
@@ -21,11 +24,11 @@ export class VitestEvaluator implements IEvaluator {
 
   async evaluate(workspace: string): Promise<EvaluationResult> {
     // Angular runs Vitest through its own builder and setup, so the Angular gate covers it.
-    if (existsSync(path.join(workspace, "angular.json"))) return EvaluationResult.skipped(this.kind, "Angular project: see the angular gate");
+    if (isAngularWorkspace(workspace)) return EvaluationResult.skipped(this.kind, "Angular project: see the angular gate");
     const entry = path.join(workspace, "node_modules", "vitest", "vitest.mjs");
     if (!existsSync(entry)) return EvaluationResult.skipped(this.kind, "vitest is not installed in the workspace");
 
-    const output = path.join(workspace, ".aisdlc", "vitest.json");
+    const output = path.join(workspace, AISDLC_DIR, "vitest.json");
     const run = await this.runner.run(process.execPath, [entry, "run", "--reporter=json", `--outputFile=${output}`], workspace);
     if (!existsSync(output)) return new EvaluationResult(this.kind, false, `vitest produced no results: ${run.stderr.slice(-500)}`);
 
@@ -34,9 +37,7 @@ export class VitestEvaluator implements IEvaluator {
       .flatMap((r) => r.assertionResults)
       .filter((a) => a.status === "failed")
       .map((a) => a.fullName);
-    const passed = report.numTotalTests - report.numFailedTests;
-    const text = `${passed}/${report.numTotalTests} passed` + (failures.length ? `; failing: ${failures.slice(0, 5).join(", ")}` : "");
-    return new EvaluationResult(this.kind, run.exitCode === 0 && report.numFailedTests === 0, text, output,
-      { tests: { total: report.numTotalTests, failed: report.numFailedTests, failing: failures } });
+    const tests = { total: report.numTotalTests, failed: report.numFailedTests, failing: failures };
+    return new EvaluationResult(this.kind, run.exitCode === 0 && tests.failed === 0, testSummary(tests), output, { tests });
   }
 }

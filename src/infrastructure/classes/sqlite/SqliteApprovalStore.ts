@@ -3,8 +3,7 @@ import { Approval } from "../../../domain/classes/approval/Approval.js";
 import type { ApprovalKind } from "../../../domain/types/approval/ApprovalKind.js";
 import type { ApprovalStatus } from "../../../domain/types/approval/ApprovalStatus.js";
 import type { IApprovalStore } from "../../../ports/interfaces/approval/IApprovalStore.js";
-
-type Row = Record<string, unknown>;
+import type { Row } from "../../types/sqlite/Row.js";
 
 export class SqliteApprovalStore implements IApprovalStore {
   constructor(private readonly db: DatabaseSync) {}

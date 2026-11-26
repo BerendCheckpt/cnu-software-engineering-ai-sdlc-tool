@@ -5,6 +5,7 @@ import { DomainError } from "../../../domain/classes/errors/DomainError.js";
 import type { IApprovalStore } from "../../../ports/interfaces/approval/IApprovalStore.js";
 import type { ISolutionStore } from "../../../ports/interfaces/solution/ISolutionStore.js";
 import { hash } from "../../helpers/migration/hash.js";
+import { requireSolution } from "../../helpers/solution/requireSolution.js";
 import { CrystallizeFolders } from "./CrystallizeFolders.js";
 
 /** Writes the approved draft as the skill, once, and marks the solution crystallized. Called only by the CLI. */
@@ -25,8 +26,7 @@ export class CrystallizeMigration {
     if (hash(draft) !== approvedHash) {
       throw new DomainError(`The draft changed after it was reviewed. Run crystallize again; the new text needs its own approval.`);
     }
-    const solution = this.solutions.get(solutionId);
-    if (!solution) throw new DomainError(`No solution ${solutionId}.`);
+    const solution = requireSolution(this.solutions, solutionId);
 
     const skillPath = this.folders.skill(from, to);
     mkdirSync(path.dirname(skillPath), { recursive: true });

@@ -1,8 +1,8 @@
-import { DomainError } from "../../../domain/classes/errors/DomainError.js";
 import { UrlPolicy } from "../../../domain/classes/security/UrlPolicy.js";
 import type { IApprovalStore } from "../../../ports/interfaces/approval/IApprovalStore.js";
 import type { ISourceCatalog } from "../../../ports/interfaces/docs/ISourceCatalog.js";
 import type { IRepoMirror } from "../../../ports/interfaces/repository/IRepoMirror.js";
+import { requireApproval } from "../../helpers/approval/requireApproval.js";
 import { mirrorName } from "../../helpers/repository/mirrorName.js";
 
 /** Clones once, shallow, after a human approved it. */
@@ -14,8 +14,7 @@ export class MirrorRepository {
   ) {}
 
   async execute(approvalId: string): Promise<string> {
-    const approval = this.approvals.get(approvalId);
-    if (!approval) throw new DomainError(`No approval ${approvalId}.`);
+    const approval = requireApproval(this.approvals, approvalId);
     approval.ensureApprovedFor("clone");
     const url = new UrlPolicy(this.catalog.repositoryHosts()).check(approval.target);
     const name = mirrorName(url);

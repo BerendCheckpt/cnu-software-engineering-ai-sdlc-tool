@@ -3,6 +3,7 @@ import path from "node:path";
 import { DomainError } from "../../../domain/classes/errors/DomainError.js";
 import type { IGitWorkspace } from "../../../ports/interfaces/git/IGitWorkspace.js";
 import type { IProcessRunner } from "../../../ports/interfaces/process/IProcessRunner.js";
+import { firstLine } from "../../../shared/helpers/text/firstLine.js";
 
 const BRANCH = /^[A-Za-z0-9._/-]+$/;
 
@@ -35,7 +36,7 @@ export class GitWorkspace implements IGitWorkspace {
     if (hasUpstream) {
       const remote = await this.runner.run("git", ["ls-remote", "--exit-code", "--heads", "origin", `refs/heads/${branch}`], workspace);
       if (remote.exitCode === 0) throw new DomainError(alreadyThere(branch, "on the remote"));
-      if (remote.exitCode !== 2) note = `could not check whether ${branch} exists on the remote: ${remote.stderr.trim().split("\n")[0]}`;
+      if (remote.exitCode !== 2) note = `could not check whether ${branch} exists on the remote: ${firstLine(remote.stderr)}`;
     }
 
     const baseBranch = await this.git(workspace, "rev-parse", "--abbrev-ref", "HEAD");
@@ -77,7 +78,7 @@ export class GitWorkspace implements IGitWorkspace {
       const found = await this.runner.run("git", ["ls-remote", "--exit-code", "--heads", "origin", `refs/heads/${base}`], workspace);
       if (found.exitCode === 0) return { base };
       if (found.exitCode !== 2) {
-        return { base, note: `could not check whether ${base} is on the remote: ${found.stderr.trim().split("\n")[0]}` };
+        return { base, note: `could not check whether ${base} is on the remote: ${firstLine(found.stderr)}` };
       }
     }
     const head = await this.runner.run("git", ["ls-remote", "--symref", "origin", "HEAD"], workspace);

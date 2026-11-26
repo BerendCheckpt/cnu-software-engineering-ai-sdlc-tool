@@ -1,7 +1,7 @@
 import { PathGuard } from "../../../domain/classes/security/PathGuard.js";
 import type { IRepoMirror } from "../../../ports/interfaces/repository/IRepoMirror.js";
 import type { ISolutionStore } from "../../../ports/interfaces/solution/ISolutionStore.js";
-import { requireSolution } from "../../helpers/evaluation/requireSolution.js";
+import { requireSolution } from "../../helpers/solution/requireSolution.js";
 
 /** A writable copy of a mirrored repository with the solution's diff applied: `work/<solutionId>`. */
 export class PrepareWorkspace {

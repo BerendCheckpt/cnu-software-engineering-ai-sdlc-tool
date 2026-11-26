@@ -7,6 +7,7 @@ import type { NextStep } from "../../../application/types/cleanup/NextStep.js";
 import type { Approval } from "../../../domain/classes/approval/Approval.js";
 import type { CleanupBatch } from "../../../domain/classes/cleanup/CleanupBatch.js";
 import type { CleanupRun } from "../../../domain/classes/cleanup/CleanupRun.js";
+import { findingLocation } from "../../../shared/helpers/findings/findingLocation.js";
 import { TextRenderer } from "./TextRenderer.js";
 
 /** Compact text for the clean-up commands. Every line tells the reader what to do next. */
@@ -39,7 +40,7 @@ export class CleanupRenderer {
             `Edit only in ${step.run.workspace}. Keep behaviour the same.`,
           ...step.findings.map(({ finding: f, code }) => f.source === "ci"
             ? `\n## CI check ${f.rule} failed. End of its log:\n${f.message}`
-            : `\n## ${f.file}${f.line ? `:${f.line}` : ""} [${f.rule}] ${f.message}${code ? `\n${code}` : ""}`),
+            : `\n## ${findingLocation(f)} [${f.rule}] ${f.message}${code ? `\n${code}` : ""}`),
           `\nWhen done: aisdlc cleanup check ${step.run.id}`,
         ].join("\n");
     }

@@ -1,5 +1,6 @@
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import https from "node:https";
+import { errorMessage } from "../../../shared/helpers/errors/errorMessage.js";
 import type { Route } from "../../types/gateway/Route.js";
 import type { FrontDoor } from "../frontdoor/FrontDoor.js";
 
@@ -48,7 +49,7 @@ export class ChatGateway {
       const forwarded = decision ? Buffer.from(JSON.stringify({ ...body, message: decision.brief })) : raw;
       return this.forward(req, res, forwarded, decision ? "model" : "passthrough");
     } catch (error) {
-      this.fail(res, 502, `gateway: ${(error as Error).message}`);
+      this.fail(res, 502, `gateway: ${errorMessage(error)}`);
     }
   }
 
@@ -63,7 +64,7 @@ export class ChatGateway {
     try {
       return this.frontDoor.route(message);
     } catch (error) {
-      this.log(`[gateway] front door failed, forwarding unchanged: ${(error as Error).message}`);
+      this.log(`[gateway] front door failed, forwarding unchanged: ${errorMessage(error)}`);
       return undefined;
     }
   }

@@ -1,5 +1,7 @@
 import type { IProcessRunner } from "../../../ports/interfaces/process/IProcessRunner.js";
 import type { IIssueTracker } from "../../../ports/interfaces/quality/IIssueTracker.js";
+import { firstLine } from "../../../shared/helpers/text/firstLine.js";
+import { lastLine } from "../../../shared/helpers/text/lastLine.js";
 import { gitHubRepository } from "../../helpers/git/gitHubRepository.js";
 import { hostOf } from "../../helpers/git/hostOf.js";
 
@@ -19,9 +21,9 @@ export class GhIssueTracker implements IIssueTracker {
     const run = await this.runner.run("gh",
       ["issue", "create", "--repo", repository, "--title", title, "--body-file", bodyFile], this.cwd);
     if (run.exitCode !== 0) {
-      return `gh issue create failed (${run.stderr.trim().split(/\r?\n/)[0] ?? "no message"}): ` +
+      return `gh issue create failed (${firstLine(run.stderr) || "no message"}): ` +
         `open an issue on ${repository} by hand, with ${bodyFile} as its text.`;
     }
-    return run.stdout.trim().split(/\r?\n/).at(-1) ?? "";
+    return lastLine(run.stdout);
   }
 }

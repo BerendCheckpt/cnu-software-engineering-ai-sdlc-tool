@@ -2,7 +2,7 @@ import { rmSync } from "node:fs";
 import { PathGuard } from "../../../domain/classes/security/PathGuard.js";
 import type { Solution } from "../../../domain/classes/solution/Solution.js";
 import type { ISolutionStore } from "../../../ports/interfaces/solution/ISolutionStore.js";
-import { requireSolution } from "../../helpers/evaluation/requireSolution.js";
+import { requireSolution } from "../../helpers/solution/requireSolution.js";
 
 /** A draft gets a new diff, for example the fix after a failed check. The next `eval` starts from a fresh copy. */
 export class ReviseSolution {

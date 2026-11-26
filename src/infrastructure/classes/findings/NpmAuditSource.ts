@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Finding } from "../../../domain/interfaces/cleanup/Finding.js";
 import type { IFindingSource } from "../../../ports/interfaces/cleanup/IFindingSource.js";
 import type { IProcessRunner } from "../../../ports/interfaces/process/IProcessRunner.js";
+import { toolFailure } from "../../../shared/helpers/process/toolFailure.js";
 
 interface NpmAudit {
   vulnerabilities?: Record<string, { severity: string; range: string; isDirect: boolean }>;
@@ -22,7 +23,7 @@ export class NpmAuditSource implements IFindingSource {
     try {
       audit = JSON.parse(run.stdout) as NpmAudit;
     } catch {
-      throw new Error(`npm audit failed: ${run.stderr.slice(-300)}`);
+      throw new Error(toolFailure("npm audit", run.stderr));
     }
     return Object.entries(audit.vulnerabilities ?? {}).map(([name, v]) => ({
       source: this.name,

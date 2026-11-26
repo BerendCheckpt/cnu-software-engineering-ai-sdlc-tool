@@ -9,8 +9,7 @@ import type { SolutionState } from "../../../domain/types/solution/SolutionState
 import type { ISolutionStore } from "../../../ports/interfaces/solution/ISolutionStore.js";
 import type { PromptHit } from "../../../ports/interfaces/solution/PromptHit.js";
 import { ftsAnyOf } from "../../helpers/sqlite/ftsAnyOf.js";
-
-type Row = Record<string, unknown>;
+import type { Row } from "../../types/sqlite/Row.js";
 
 export class SqliteSolutionStore implements ISolutionStore {
   constructor(

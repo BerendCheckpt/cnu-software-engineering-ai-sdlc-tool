@@ -1,10 +1,12 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { parse } from "yaml";
 import { z } from "zod";
 import { DomainError } from "../../../domain/classes/errors/DomainError.js";
+import { AISDLC_DIR } from "../../../shared/constants/workspace/AISDLC_DIR.js";
+import { programName } from "../../../shared/helpers/process/programName.js";
 import { RUNNER_NAME } from "../../constants/process/RUNNER_NAME.js";
 import { RunnerSchema } from "../../constants/process/RunnerSchema.js";
+import { loadYaml } from "../../helpers/config/loadYaml.js";
 import type { RunnerSpec } from "../../types/process/RunnerSpec.js";
 
 const Catalog = z.object({
@@ -12,19 +14,19 @@ const Catalog = z.object({
   commands: z.record(z.string().regex(RUNNER_NAME), z.string().regex(RUNNER_NAME)),
 });
 
-const SKIPPED_FOLDERS = new Set(["node_modules", "bin", "obj", ".git", ".aisdlc"]);
+const SKIPPED_FOLDERS = new Set(["node_modules", "bin", "obj", ".git", AISDLC_DIR]);
 
 /** The runners in `config/runners.yaml`, and which one a program runs in. */
 export class RunnerCatalog {
   private readonly catalog: z.infer<typeof Catalog>;
 
   constructor(file: string) {
-    this.catalog = Catalog.parse(parse(readFileSync(file, "utf8")));
+    this.catalog = loadYaml(file, Catalog);
   }
 
   /** The runner for `command` (a program name or path) in this workspace. */
   runnerFor(command: string, workspace: string): RunnerSpec {
-    const program = path.basename(command).replace(/\.(exe|cmd)$/i, "").toLowerCase();
+    const program = programName(command).toLowerCase();
     const name = program === "dotnet" ? `dotnet${this.dotnetMajor(workspace)}` : this.catalog.commands[program];
     const runner = name ? this.catalog.runners[name] : undefined;
     if (!runner) throw new DomainError(`No container runner for ${program}${name ? ` (${name})` : ""} in runners.yaml.`);

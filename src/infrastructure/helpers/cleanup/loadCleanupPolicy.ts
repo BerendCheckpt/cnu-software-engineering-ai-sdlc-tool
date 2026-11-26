@@ -1,8 +1,7 @@
-import { readFileSync } from "node:fs";
-import { parse } from "yaml";
 import { z } from "zod";
 import { FINDING_CATEGORIES } from "../../../domain/constants/cleanup/FINDING_CATEGORIES.js";
 import type { CleanupPolicy } from "../../interfaces/cleanup/CleanupPolicy.js";
+import { loadYaml } from "../config/loadYaml.js";
 
 const Patterns = z.array(z.string().min(1)).default([]);
 
@@ -23,7 +22,7 @@ const Policy = z.object({
 
 /** Reads `config/cleanup.yaml`. A pattern that is not a valid regular expression stops the load. */
 export function loadCleanupPolicy(file: string): CleanupPolicy {
-  const policy = Policy.parse(parse(readFileSync(file, "utf8")));
+  const policy = loadYaml(file, Policy);
   const compile = (patterns: string[]) => patterns.map((p) => new RegExp(p, "i"));
   return {
     limits: { maxFindings: policy.batches.maxFindings, maxFiles: policy.batches.maxFiles },

@@ -1,8 +1,7 @@
-import { readdirSync } from "node:fs";
 import type { IFormatter } from "../../../ports/interfaces/cleanup/IFormatter.js";
 import type { IProcessRunner } from "../../../ports/interfaces/process/IProcessRunner.js";
-
-const DOTNET_PROJECT = /\.(slnx?|csproj)$/i;
+import { toolFailure } from "../../../shared/helpers/process/toolFailure.js";
+import { hasDotnetProject } from "../../../shared/helpers/workspace/hasDotnetProject.js";
 
 /** `dotnet format`: whitespace, code style and analyzer fixes the repository's own `.editorconfig` asks for. */
 export class DotnetFormatter implements IFormatter {
@@ -11,9 +10,9 @@ export class DotnetFormatter implements IFormatter {
   constructor(private readonly runner: IProcessRunner) {}
 
   async apply(workspace: string): Promise<boolean> {
-    if (!readdirSync(workspace).some((f) => DOTNET_PROJECT.test(f))) return false;
+    if (!hasDotnetProject(workspace)) return false;
     const run = await this.runner.run("dotnet", ["format", "--no-restore"], workspace);
-    if (run.exitCode !== 0) throw new Error(`dotnet format failed: ${run.stderr.slice(-300)}`);
+    if (run.exitCode !== 0) throw new Error(toolFailure("dotnet format", run.stderr));
     return true;
   }
 }

@@ -3,6 +3,7 @@ import { DomainError } from "../../../domain/classes/errors/DomainError.js";
 import type { IProcessRunner } from "../../../ports/interfaces/process/IProcessRunner.js";
 import type { ISandbox } from "../../../ports/interfaces/process/ISandbox.js";
 import type { ProcessResult } from "../../../ports/interfaces/process/ProcessResult.js";
+import { programName } from "../../../shared/helpers/process/programName.js";
 import { MOUNT } from "../../constants/process/MOUNT.js";
 import { toContainerPath } from "../../helpers/process/toContainerPath.js";
 import type { ContainerOptions } from "../../interfaces/process/ContainerOptions.js";
@@ -54,6 +55,6 @@ export class ContainerProcessRunner implements IProcessRunner, ISandbox {
   /** `process.execPath` is the host's node; in the container it is just `node`. */
   private program(command: string): string {
     if (command === process.execPath) return "node";
-    return path.basename(command).replace(/\.(exe|cmd)$/i, "");
+    return programName(command);
   }
 }

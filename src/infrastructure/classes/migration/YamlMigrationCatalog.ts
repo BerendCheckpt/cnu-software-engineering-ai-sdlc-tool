@@ -1,17 +1,16 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
-import { parse } from "yaml";
 import { z } from "zod";
 import { isRetailerPluginPair } from "../../../domain/helpers/migration/isRetailerPluginPair.js";
 import type { MigrationPath } from "../../../domain/interfaces/migration/MigrationPath.js";
 import type { MigrationSkill } from "../../../domain/interfaces/migration/MigrationSkill.js";
 import type { IMigrationCatalog } from "../../../ports/interfaces/migration/IMigrationCatalog.js";
-
-const ID = /^[a-z0-9.-]+$/;
+import { MIGRATION_ID } from "../../../shared/constants/migration/MIGRATION_ID.js";
+import { loadYaml } from "../../helpers/config/loadYaml.js";
 
 const Path = z.object({
-  from: z.string().regex(ID),
-  to: z.string().regex(ID),
+  from: z.string().regex(MIGRATION_ID),
+  to: z.string().regex(MIGRATION_ID),
   sourceDocs: z.array(z.string()).default([]),
   targetDocs: z.array(z.string()).default([]),
   tool: z.string().optional(),
@@ -36,11 +35,11 @@ export class YamlMigrationCatalog implements IMigrationCatalog {
   private readonly paths: MigrationPath[];
 
   constructor(file: string, private readonly skillsRoot: string) {
-    this.paths = Catalog.parse(parse(readFileSync(file, "utf8"))).migrations;
+    this.paths = loadYaml(file, Catalog).migrations;
   }
 
   findSkill(from: string, to: string): MigrationSkill | undefined {
-    if (!ID.test(from) || !ID.test(to)) return undefined;
+    if (!MIGRATION_ID.test(from) || !MIGRATION_ID.test(to)) return undefined;
     const skillPath = path.join(this.skillsRoot, `${from}-to-${to}`, "SKILL.md");
     return existsSync(skillPath) ? { from, to, skillPath } : undefined;
   }

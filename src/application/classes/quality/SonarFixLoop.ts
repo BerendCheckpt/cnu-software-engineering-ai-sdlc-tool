@@ -1,4 +1,3 @@
-import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { FixLoop } from "../../../domain/classes/quality/FixLoop.js";
 import type { QualityPolicy } from "../../../domain/classes/quality/QualityPolicy.js";
@@ -7,6 +6,9 @@ import type { EscalationContext } from "../../../ports/interfaces/quality/Escala
 import type { IEscalationWriter } from "../../../ports/interfaces/quality/IEscalationWriter.js";
 import type { IFixLoopStore } from "../../../ports/interfaces/quality/IFixLoopStore.js";
 import type { IIssueTracker } from "../../../ports/interfaces/quality/IIssueTracker.js";
+import { errorMessage } from "../../../shared/helpers/errors/errorMessage.js";
+import { slugify } from "../../../shared/helpers/text/slugify.js";
+import { writeTextFile } from "../../../shared/helpers/workspace/writeTextFile.js";
 import type { FixCheck } from "../../interfaces/quality/FixCheck.js";
 import type { BatchLoopOutcome } from "../../types/quality/BatchLoopOutcome.js";
 import type { LoopOutcome } from "../../types/quality/LoopOutcome.js";
@@ -76,21 +78,20 @@ export class SonarFixLoop {
     try {
       details = await context();
     } catch (error) {
-      const message = `Issues for ${subject} could not be prepared: ${(error as Error).message}`;
+      const message = `Issues for ${subject} could not be prepared: ${errorMessage(error)}`;
       this.log(message);
       return [message];
     }
-    const base = subject.replace(/[^A-Za-z0-9._-]+/g, "-");
+    const base = slugify(subject);
     const opened: string[] = [];
     for (const [i, finding] of findings.entries()) {
       const file = path.join(this.folder, `${base}-${i + 1}.md`);
       try {
         const { title, body } = this.writer.renderFinding(details, finding, loop);
-        mkdirSync(this.folder, { recursive: true });
-        writeFileSync(file, body, "utf8");
+        writeTextFile(file, body);
         opened.push(await this.tracker.open(details.remoteUrl, title, file));
       } catch (error) {
-        const message = `Issue for ${finding.rule} ${finding.file} could not be opened: ${(error as Error).message}`;
+        const message = `Issue for ${finding.rule} ${finding.file} could not be opened: ${errorMessage(error)}`;
         this.log(message);
         opened.push(`${message}. Look at ${file}`);
       }
@@ -109,15 +110,14 @@ export class SonarFixLoop {
 
   /** The issue text is always written to a file first; a failure to open the issue is logged and never stalls. */
   private async escalate(loop: FixLoop, context: () => Promise<EscalationContext>): Promise<string> {
-    const file = path.join(this.folder, `${loop.subject.replace(/[^A-Za-z0-9._-]+/g, "-")}.md`);
+    const file = path.join(this.folder, `${slugify(loop.subject)}.md`);
     try {
       const details = await context();
       const { title, body } = this.writer.render(details, loop, this.policy.maxFixAttempts);
-      mkdirSync(this.folder, { recursive: true });
-      writeFileSync(file, body, "utf8");
+      writeTextFile(file, body);
       return await this.tracker.open(details.remoteUrl, title, file);
     } catch (error) {
-      const message = `Escalation of ${loop.subject} could not be opened: ${(error as Error).message}`;
+      const message = `Escalation of ${loop.subject} could not be opened: ${errorMessage(error)}`;
       this.log(message);
       return `${message}. Look at ${file} and the work folder.`;
     }

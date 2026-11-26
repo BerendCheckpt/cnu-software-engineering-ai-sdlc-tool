@@ -3,6 +3,8 @@ import path from "node:path";
 import { EvaluationResult } from "../../../domain/classes/evaluation/EvaluationResult.js";
 import type { IEvaluator } from "../../../ports/interfaces/evaluation/IEvaluator.js";
 import type { IProcessRunner } from "../../../ports/interfaces/process/IProcessRunner.js";
+import { testSummary } from "../../../shared/helpers/evaluation/testSummary.js";
+import { isAngularWorkspace } from "../../../shared/helpers/workspace/isAngularWorkspace.js";
 import { summarizeNodeTest } from "../../helpers/evaluation/summarizeNodeTest.js";
 
 /**
@@ -18,7 +20,7 @@ export class NodeTestEvaluator implements IEvaluator {
   async evaluate(workspace: string): Promise<EvaluationResult> {
     const manifest = path.join(workspace, "package.json");
     if (!existsSync(manifest)) return EvaluationResult.skipped(this.kind, "no package.json");
-    if (existsSync(path.join(workspace, "angular.json"))) return EvaluationResult.skipped(this.kind, "Angular project: see the angular gate");
+    if (isAngularWorkspace(workspace)) return EvaluationResult.skipped(this.kind, "Angular project: see the angular gate");
     const script = (JSON.parse(readFileSync(manifest, "utf8")) as { scripts?: Record<string, string> }).scripts?.test ?? "";
     if (!/\bnode\b[^&|;]*--test\b/.test(script)) return EvaluationResult.skipped(this.kind, "the test script does not use node --test");
 
@@ -27,8 +29,6 @@ export class NodeTestEvaluator implements IEvaluator {
     const summary = summarizeNodeTest(output);
     if (!summary) return new EvaluationResult(this.kind, false, `node --test produced no summary: ${output.slice(-500)}`);
 
-    const passed = summary.total - summary.failed;
-    const text = `${passed}/${summary.total} passed` + (summary.failing.length ? `; failing: ${summary.failing.slice(0, 5).join(", ")}` : "");
-    return new EvaluationResult(this.kind, run.exitCode === 0 && summary.failed === 0, text, undefined, { tests: summary });
+    return new EvaluationResult(this.kind, run.exitCode === 0 && summary.failed === 0, testSummary(summary), undefined, { tests: summary });
   }
 }

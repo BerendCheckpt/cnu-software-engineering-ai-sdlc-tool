@@ -1,10 +1,4 @@
-import type { Finding } from "../../../domain/interfaces/cleanup/Finding.js";
+import type { FixAttempt } from "../../../domain/interfaces/quality/FixAttempt.js";
 
-/** What one check of a task found. */
-export interface FixCheck {
-  blocking: Finding[];
-  reported: Finding[];
-  problems: string[];
-  /** Files the change touched, kept so a later try can see what was already tried. */
-  changed?: string[];
-}
+/** What one check of a task found: a fix attempt before it is stamped with the time of the check. */
+export interface FixCheck extends Omit<FixAttempt, "at"> {}

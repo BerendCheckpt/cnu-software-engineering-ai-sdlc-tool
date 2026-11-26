@@ -1,5 +1,6 @@
 import type { IPullRequestPublisher } from "../../../ports/interfaces/git/IPullRequestPublisher.js";
 import type { IProcessRunner } from "../../../ports/interfaces/process/IProcessRunner.js";
+import { lastLine } from "../../../shared/helpers/text/lastLine.js";
 import { hostOf } from "../../helpers/git/hostOf.js";
 
 /**
@@ -19,6 +20,6 @@ export class GhPullRequestPublisher implements IPullRequestPublisher {
     const run = await this.runner.run("gh",
       ["pr", "create", "--head", branch, "--base", baseBranch, "--title", title, "--body-file", bodyFile], workspace);
     if (run.exitCode !== 0) throw new Error(`gh pr create failed: ${run.stderr.trim()}`);
-    return run.stdout.trim().split(/\r?\n/).at(-1) ?? "";
+    return lastLine(run.stdout);
   }
 }

@@ -4,8 +4,9 @@ import { EvaluationResult } from "../../../domain/classes/evaluation/EvaluationR
 import type { TestCounts } from "../../../domain/interfaces/evaluation/TestCounts.js";
 import type { IEvaluator } from "../../../ports/interfaces/evaluation/IEvaluator.js";
 import type { IProcessRunner } from "../../../ports/interfaces/process/IProcessRunner.js";
-
-const SOLUTION_OR_PROJECT = /\.(slnx?|csproj)$/i;
+import { AISDLC_DIR } from "../../../shared/constants/workspace/AISDLC_DIR.js";
+import { testSummary } from "../../../shared/helpers/evaluation/testSummary.js";
+import { hasDotnetProject } from "../../../shared/helpers/workspace/hasDotnetProject.js";
 
 /** Runs `dotnet test` with the TRX logger and reports the counters and the first failing tests. */
 export class XunitEvaluator implements IEvaluator {
@@ -14,10 +15,10 @@ export class XunitEvaluator implements IEvaluator {
   constructor(private readonly runner: IProcessRunner) {}
 
   async evaluate(workspace: string): Promise<EvaluationResult> {
-    if (!readdirSync(workspace).some((f) => SOLUTION_OR_PROJECT.test(f))) {
+    if (!hasDotnetProject(workspace)) {
       return EvaluationResult.skipped(this.kind, "no .sln, .slnx or .csproj at the workspace root");
     }
-    const results = path.join(workspace, ".aisdlc", "xunit");
+    const results = path.join(workspace, AISDLC_DIR, "xunit");
     const run = await this.runner.run(
       "dotnet", ["test", "--logger", "trx", "--results-directory", results], workspace);
     const summary = this.summarize(results);
@@ -46,7 +47,7 @@ export class XunitEvaluator implements IEvaluator {
         failures.push(m[1]!);
       }
     }
-    const text = `${total - failed}/${total} passed` + (failures.length ? `; failing: ${failures.slice(0, 5).join(", ")}` : "");
-    return { tests: { total, failed, failing: failures }, text };
+    const tests = { total, failed, failing: failures };
+    return { tests, text: testSummary(tests) };
   }
 }

@@ -11,6 +11,9 @@ import type { Finding } from "../../../domain/interfaces/cleanup/Finding.js";
 import type { GateSnapshot } from "../../../domain/interfaces/cleanup/GateSnapshot.js";
 import type { ICleanupReportWriter } from "../../../ports/interfaces/cleanup/ICleanupReportWriter.js";
 import type { DocReference } from "../../../ports/interfaces/docs/DocReference.js";
+import { findingLocation } from "../../../shared/helpers/findings/findingLocation.js";
+import { escapeTableCell } from "../../../shared/helpers/markdown/escapeTableCell.js";
+import { shortSha } from "../../../shared/helpers/text/shortSha.js";
 
 /** Fixed templates, so the plan and the PR body read the same every time and cost no model tokens. */
 export class CleanupReportWriter implements ICleanupReportWriter {
@@ -50,10 +53,10 @@ export class CleanupReportWriter implements ICleanupReportWriter {
     const escalated = batches.filter((b) => b.status === "escalated");
     const rows = batches.map((b) => {
       const gates = b.gates.map((g) => g.gate).join(", ") || "none";
-      const outcome = b.status === "done" ? (b.commitSha ? `\`${b.commitSha.slice(0, 8)}\`` : b.note ?? "")
+      const outcome = b.status === "done" ? (b.commitSha ? `\`${shortSha(b.commitSha)}\`` : b.note ?? "")
         : b.status === "escalated"
-          ? `${b.commitSha ? `\`${b.commitSha.slice(0, 8)}\`, ` : ""}${this.cell(b.note ?? "escalated")}`
-          : `skipped: ${this.cell(b.note ?? "")}`;
+          ? `${b.commitSha ? `\`${shortSha(b.commitSha)}\`, ` : ""}${escapeTableCell(b.note ?? "escalated")}`
+          : `skipped: ${escapeTableCell(b.note ?? "")}`;
       // Checks it took: every failed one, plus the one that passed.
       const tries = b.category === "format" ? "-" : b.attempts + (b.status === "done" ? 1 : 0);
       return `| ${b.number} | ${b.category} | ${b.category === "format" ? "-" : b.findings.length} | ${tries} | ${gates} | ${outcome} |`;
@@ -128,8 +131,8 @@ export class CleanupReportWriter implements ICleanupReportWriter {
       "|---|---|---|---|---|",
       ...bySeverity(fixed).map((f) => {
         const batch = this.batchOf(f, batches);
-        const commit = batch?.commitSha ? `\`${batch.commitSha.slice(0, 8)}\`${batch.gates.length ? " ⚠" : ""}` : "as a side effect";
-        return `| ${normalizeSeverity(f.severity)} | ${f.category} | ${this.cell(f.rule)} | ${this.location(f)} | ${commit} |`;
+        const commit = batch?.commitSha ? `\`${shortSha(batch.commitSha)}\`${batch.gates.length ? " ⚠" : ""}` : "as a side effect";
+        return `| ${normalizeSeverity(f.severity)} | ${f.category} | ${escapeTableCell(f.rule)} | ${this.location(f)} | ${commit} |`;
       }),
       "",
       "⚠: the batch changed tests, dependencies or security-sensitive code; see Security concerns.",
@@ -152,11 +155,11 @@ export class CleanupReportWriter implements ICleanupReportWriter {
         ...findings.map((f) => {
           const batch = this.batchOf(f, batches);
           const status = fixedKeys.has(findingKey(f))
-            ? `fixed${batch?.commitSha ? ` in \`${batch.commitSha.slice(0, 8)}\`` : ""}`
-            : batch?.status === "escalated" ? this.cell(batch.note ?? "escalated") : "still open";
+            ? `fixed${batch?.commitSha ? ` in \`${shortSha(batch.commitSha)}\`` : ""}`
+            : batch?.status === "escalated" ? escapeTableCell(batch.note ?? "escalated") : "still open";
           const doc = docs.get(f.rule);
-          return `| ${normalizeSeverity(f.severity)} | ${f.source} | ${this.cell(f.rule)} | ${this.location(f)} | ${status} | ` +
-            `${doc ? `[${this.cell(doc.heading)}](${doc.url})` : "-"} |`;
+          return `| ${normalizeSeverity(f.severity)} | ${f.source} | ${escapeTableCell(f.rule)} | ${this.location(f)} | ${status} | ` +
+            `${doc ? `[${escapeTableCell(doc.heading)}](${doc.url})` : "-"} |`;
         }),
         "",
         ...(docs.size ? [] : ["No pulled official docs matched these rules. Pull them with `aisdlc docs request <id>`.", ""]),
@@ -164,7 +167,7 @@ export class CleanupReportWriter implements ICleanupReportWriter {
       ...(flagged.length ? [
         "Review these changes closely:",
         "",
-        ...flagged.map((b) => `- Batch ${b.number} (${b.category}, \`${b.commitSha?.slice(0, 8) ?? "-"}\`): ` +
+        ...flagged.map((b) => `- Batch ${b.number} (${b.category}, \`${b.commitSha === undefined ? "-" : shortSha(b.commitSha)}\`): ` +
           b.gates.map((g) => `${g.gate}: ${g.files.map((f) => `\`${f}\``).join(", ")}`).join("; ")),
         "",
       ] : []),
@@ -177,7 +180,7 @@ export class CleanupReportWriter implements ICleanupReportWriter {
   }
 
   private location(f: Finding): string {
-    return `\`${this.cell(f.file)}${f.line ? `:${f.line}` : ""}\``;
+    return `\`${escapeTableCell(findingLocation(f))}\``;
   }
 
   private gateLines(gates: GateSnapshot[]): string[] {
@@ -193,10 +196,6 @@ export class CleanupReportWriter implements ICleanupReportWriter {
 
   private files(b: CleanupBatch): string {
     const files = [...new Set(b.findings.map((f) => f.file))];
-    return this.cell(files.length > 3 ? `${files.slice(0, 3).join(", ")} +${files.length - 3}` : files.join(", "));
-  }
-
-  private cell(text: string): string {
-    return text.replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
+    return escapeTableCell(files.length > 3 ? `${files.slice(0, 3).join(", ")} +${files.length - 3}` : files.join(", "));
   }
 }

@@ -1,8 +1,9 @@
-import { readdirSync } from "node:fs";
 import path from "node:path";
 import type { Finding } from "../../../domain/interfaces/cleanup/Finding.js";
 import type { IFindingSource } from "../../../ports/interfaces/cleanup/IFindingSource.js";
 import type { IProcessRunner } from "../../../ports/interfaces/process/IProcessRunner.js";
+import { toolFailure } from "../../../shared/helpers/process/toolFailure.js";
+import { hasDotnetProject } from "../../../shared/helpers/workspace/hasDotnetProject.js";
 
 interface DotnetPackages {
   projects?: {
@@ -20,8 +21,6 @@ interface VulnerablePackage {
   vulnerabilities?: { severity: string }[];
 }
 
-const DOTNET_PROJECT = /\.(slnx?|csproj)$/i;
-
 /** Known vulnerable NuGet packages, from `dotnet list package --vulnerable`. Needs nuget.org. */
 export class DotnetVulnerableSource implements IFindingSource {
   readonly name = "dotnet-vulnerable";
@@ -29,14 +28,14 @@ export class DotnetVulnerableSource implements IFindingSource {
   constructor(private readonly runner: IProcessRunner) {}
 
   async collect(workspace: string): Promise<Finding[]> {
-    if (!readdirSync(workspace).some((f) => DOTNET_PROJECT.test(f))) return [];
+    if (!hasDotnetProject(workspace)) return [];
     const run = await this.runner.run("dotnet",
       ["list", "package", "--vulnerable", "--include-transitive", "--format", "json"], workspace);
     let report: DotnetPackages;
     try {
       report = JSON.parse(run.stdout) as DotnetPackages;
     } catch {
-      throw new Error(`dotnet list package failed: ${run.stderr.slice(-300)}`);
+      throw new Error(toolFailure("dotnet list package", run.stderr));
     }
     return (report.projects ?? []).flatMap((project) => (project.frameworks ?? [])
       .flatMap((f) => [...(f.topLevelPackages ?? []), ...(f.transitivePackages ?? [])])

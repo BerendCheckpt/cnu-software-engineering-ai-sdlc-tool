@@ -1,7 +1,5 @@
 import type { Finding } from "../cleanup/Finding.js";
 
-// ---------------------------------------------------------------------------------------------------------------
-
 /** One check of a task. It failed when a blocking issue was open or something else got worse. */
 export interface FixAttempt {
   at: string;

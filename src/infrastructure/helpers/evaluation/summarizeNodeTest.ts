@@ -1,5 +1,7 @@
+import type { TestCounts } from "../../../domain/interfaces/evaluation/TestCounts.js";
+
 /** Counts from the node:test spec or TAP summary ("ℹ tests 12" / "# tests 12", and the same for fail). */
-export function summarizeNodeTest(output: string): { total: number; failed: number; failing: string[] } | undefined {
+export function summarizeNodeTest(output: string): TestCounts | undefined {
   const count = (name: string) => {
     const m = new RegExp(`^(?:ℹ|#) ${name} (\\d+)\\s*$`, "m").exec(output);
     return m ? Number(m[1]) : undefined;

@@ -3,6 +3,9 @@ import { findingKey } from "../../../domain/helpers/cleanup/findingKey.js";
 import type { Finding } from "../../../domain/interfaces/cleanup/Finding.js";
 import type { EscalationContext } from "../../../ports/interfaces/quality/EscalationContext.js";
 import type { IEscalationWriter } from "../../../ports/interfaces/quality/IEscalationWriter.js";
+import { findingLocation } from "../../../shared/helpers/findings/findingLocation.js";
+import { escapeTableCell } from "../../../shared/helpers/markdown/escapeTableCell.js";
+import { plural } from "../../../shared/helpers/text/plural.js";
 
 /** A diff longer than this is cut, so the issue stays readable; the full change is in the workspace. */
 const MAX_DIFF = 20_000;
@@ -15,7 +18,7 @@ export class EscalationReportWriter implements IEscalationWriter {
     const problems = last?.problems ?? [];
     const what = blocking.length
       ? `${blocking.length} SonarQube ${blocking.length === 1 ? "issue" : "issues"} still open`
-      : `${problems.length} ${problems.length === 1 ? "problem" : "problems"} left`;
+      : `${plural(problems.length, "problem")} left`;
     const title = `aisdlc: ${what} after ${maxFixAttempts} fix attempts: ${context.task}`;
     const rules = context.sonarProjectUrl ? new URL(context.sonarProjectUrl).origin : undefined;
 
@@ -39,14 +42,14 @@ export class EscalationReportWriter implements IEscalationWriter {
         "",
         "| Severity | Rule | Location | Message |",
         "|---|---|---|---|",
-        ...blocking.map((f) => `| ${f.severity} | ${this.rule(f, rules)} | \`${f.file}${f.line ? `:${f.line}` : ""}\` | ${this.cell(f.message)} |`),
+        ...blocking.map((f) => `| ${f.severity} | ${this.rule(f, rules)} | \`${findingLocation(f)}\` | ${escapeTableCell(f.message)} |`),
         "",
       ] : []),
       ...(problems.length ? ["## Other problems at the last check", "", ...problems.map((p) => `- ${p}`), ""] : []),
       ...((last?.reported.length ?? 0) > 0 ? [
         "## Also open, not blocking",
         "",
-        ...last!.reported.map((f) => `- ${f.severity} ${f.rule} \`${f.file}${f.line ? `:${f.line}` : ""}\`: ${f.message}`),
+        ...last!.reported.map((f) => `- ${f.severity} ${f.rule} \`${findingLocation(f)}\`: ${f.message}`),
         "",
       ] : []),
       "## Attempts",
@@ -56,7 +59,7 @@ export class EscalationReportWriter implements IEscalationWriter {
       ...loop.attempts.map((a, i) => {
         const previous = loop.attempts[i - 1]?.blocking ?? [];
         return `| ${i + 1} | ${a.at} | ${a.blocking.length} | ${i ? this.keys(minus(previous, a.blocking)) : "-"} | ` +
-          `${i ? this.keys(minus(a.blocking, previous)) : "-"} | ${this.cell(a.problems.join("; ")) || "-"} |`;
+          `${i ? this.keys(minus(a.blocking, previous)) : "-"} | ${escapeTableCell(a.problems.join("; ")) || "-"} |`;
       }),
       "",
       ...(context.limitations.length ? ["## Not covered by the check", "", ...context.limitations.map((l) => `- ${l}`), ""] : []),
@@ -90,7 +93,7 @@ export class EscalationReportWriter implements IEscalationWriter {
   }
 
   renderFinding(context: EscalationContext, finding: Finding, loop: FixLoop): { title: string; body: string } {
-    const at = `${finding.file}${finding.line ? `:${finding.line}` : ""}`;
+    const at = findingLocation(finding);
     const rules = context.sonarProjectUrl ? new URL(context.sonarProjectUrl).origin : undefined;
     const title = `aisdlc: ${finding.severity} ${finding.rule} in ${finding.file}: ${finding.message}`.slice(0, 240);
     const body = [
@@ -128,11 +131,6 @@ export class EscalationReportWriter implements IEscalationWriter {
 
   private keys(findings: Finding[]): string {
     return findings.length ? findings.map((f) => `${f.rule} ${f.file}`).join(", ") : "none";
-  }
-
-  /** Keeps text on one table row. */
-  private cell(text: string): string {
-    return text.replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
   }
 }
 

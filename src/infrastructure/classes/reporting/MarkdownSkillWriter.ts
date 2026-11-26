@@ -1,13 +1,15 @@
 import type { ISkillWriter } from "../../../ports/interfaces/migration/ISkillWriter.js";
 import type { SkillContent } from "../../../ports/interfaces/migration/SkillContent.js";
+import { escapeTableCell } from "../../../shared/helpers/markdown/escapeTableCell.js";
+import { shortSha } from "../../../shared/helpers/text/shortSha.js";
 import { SAMPLE_RULE } from "../../constants/reporting/SAMPLE_RULE.js";
 
 /** A fixed template for crystallized migration skills, so every skill reads the same and costs no model tokens. */
 export class MarkdownSkillWriter implements ISkillWriter {
   render(c: SkillContent): string {
     const { from, to } = c.path;
-    const gates = c.evaluations.map((e) => `| ${e.kind} | ${e.isSkipped ? "skipped" : e.passed ? "passed" : "failed"} | ${cell(e.digest)} |`);
-    const applied = c.applications.map((a) => `- ${a.repository}@${a.commit.slice(0, 8)}${a.pullRequestUrl ? ` (${a.pullRequestUrl})` : ""}`);
+    const gates = c.evaluations.map((e) => `| ${e.kind} | ${e.isSkipped ? "skipped" : e.passed ? "passed" : "failed"} | ${escapeTableCell(e.digest)} |`);
+    const applied = c.applications.map((a) => `- ${a.repository}@${shortSha(a.commit)}${a.pullRequestUrl ? ` (${a.pullRequestUrl})` : ""}`);
     return [
       "---",
       `name: migrate-${from}-to-${to}`,
@@ -51,8 +53,4 @@ export class MarkdownSkillWriter implements ISkillWriter {
       "",
     ].join("\n");
   }
-}
-
-function cell(text: string): string {
-  return text.replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
 }

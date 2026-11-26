@@ -1,4 +1,3 @@
-import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { MarkdownChunker } from "../../../domain/classes/docs/MarkdownChunker.js";
 import { CodeTermExtractor } from "../../../domain/classes/knowledge/CodeTermExtractor.js";
@@ -14,6 +13,7 @@ import type { MigrationOutcome } from "../../../domain/types/migration/Migration
 import type { IDocStore } from "../../../ports/interfaces/docs/IDocStore.js";
 import type { IMigrationCatalog } from "../../../ports/interfaces/migration/IMigrationCatalog.js";
 import type { IRepoMirror } from "../../../ports/interfaces/repository/IRepoMirror.js";
+import { writeTextFile } from "../../../shared/helpers/workspace/writeTextFile.js";
 import type { MigrationRequest } from "../../interfaces/migration/MigrationRequest.js";
 import type { RequestDocs } from "../docs/RequestDocs.js";
 
@@ -253,8 +253,7 @@ export class PlanMigration {
       ...[...migration.sourceDocs, ...migration.targetDocs].map((id) => `- ${id}`),
       "",
     ];
-    mkdirSync(path.dirname(file), { recursive: true });
-    writeFileSync(file, lines.join("\n"), "utf8");
+    writeTextFile(file, lines.join("\n"));
     return file;
   }
 }

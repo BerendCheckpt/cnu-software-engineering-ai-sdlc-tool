@@ -2,8 +2,6 @@ import { CleanupBatch } from "../../../domain/classes/cleanup/CleanupBatch.js";
 import { CleanupRun } from "../../../domain/classes/cleanup/CleanupRun.js";
 import type { NextStep } from "./NextStep.js";
 
-// ---------------------------------------------------------------------------------------------------------------
-
 export type CiOutcome =
   | { kind: "passing" | "pending" | "none"; run: CleanupRun }
   | { kind: "unsupported"; run: CleanupRun; reason: string }

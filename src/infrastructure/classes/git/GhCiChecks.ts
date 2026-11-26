@@ -2,6 +2,7 @@ import type { FailedCheck } from "../../../ports/interfaces/git/FailedCheck.js";
 import type { ICiChecks } from "../../../ports/interfaces/git/ICiChecks.js";
 import type { IProcessRunner } from "../../../ports/interfaces/process/IProcessRunner.js";
 import type { CiResult } from "../../../ports/types/git/CiResult.js";
+import { firstLine } from "../../../shared/helpers/text/firstLine.js";
 import { gitHubRepository } from "../../helpers/git/gitHubRepository.js";
 
 /** Lines kept from the end of a failed job's log: enough to see the error, few enough to stay cheap. */
@@ -49,7 +50,7 @@ export class GhCiChecks implements ICiChecks {
     const job = /\/job\/(\d+)/.exec(check.link ?? "")?.[1];
     if (!job) return `No job log found; see ${check.link ?? "the pull request's checks"}`;
     const result = await this.runner.run("gh", ["run", "view", "--repo", repository, "--job", job, "--log-failed"], workspace);
-    if (result.exitCode !== 0) return `The job log could not be read (${result.stderr.trim().split("\n")[0]}); see ${check.link}`;
+    if (result.exitCode !== 0) return `The job log could not be read (${firstLine(result.stderr)}); see ${check.link}`;
     // Each line starts with the job and step name; the step name stays, it says where the failure is.
     return result.stdout.trimEnd().split(/\r?\n/).slice(-LOG_TAIL).join("\n");
   }

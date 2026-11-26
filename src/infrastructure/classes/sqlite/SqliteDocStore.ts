@@ -3,8 +3,7 @@ import type { DocChunk } from "../../../domain/interfaces/docs/DocChunk.js";
 import type { DocSource } from "../../../domain/interfaces/docs/DocSource.js";
 import type { IDocStore } from "../../../ports/interfaces/docs/IDocStore.js";
 import { ftsAnyOf } from "../../helpers/sqlite/ftsAnyOf.js";
-
-type Row = Record<string, unknown>;
+import type { Row } from "../../types/sqlite/Row.js";
 
 export class SqliteDocStore implements IDocStore {
   constructor(private readonly db: DatabaseSync) {}

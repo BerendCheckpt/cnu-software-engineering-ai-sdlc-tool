@@ -1,8 +1,7 @@
-import { readFileSync } from "node:fs";
-import { parse } from "yaml";
 import { z } from "zod";
 import type { DocSource } from "../../../domain/interfaces/docs/DocSource.js";
 import type { ISourceCatalog } from "../../../ports/interfaces/docs/ISourceCatalog.js";
+import { loadYaml } from "../../helpers/config/loadYaml.js";
 
 const Manifest = z.object({
   allowedHosts: z.array(z.string()),
@@ -20,7 +19,7 @@ export class YamlSourceCatalog implements ISourceCatalog {
   private readonly manifest: z.infer<typeof Manifest>;
 
   constructor(file: string) {
-    this.manifest = Manifest.parse(parse(readFileSync(file, "utf8")));
+    this.manifest = loadYaml(file, Manifest);
   }
 
   docHosts(): string[] {

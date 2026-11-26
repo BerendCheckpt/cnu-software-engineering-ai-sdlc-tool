@@ -3,6 +3,8 @@ import path from "node:path";
 import { EvaluationResult } from "../../../domain/classes/evaluation/EvaluationResult.js";
 import type { IEvaluator } from "../../../ports/interfaces/evaluation/IEvaluator.js";
 import type { IProcessRunner } from "../../../ports/interfaces/process/IProcessRunner.js";
+import { testSummary } from "../../../shared/helpers/evaluation/testSummary.js";
+import { isAngularWorkspace } from "../../../shared/helpers/workspace/isAngularWorkspace.js";
 import { summarize } from "../../helpers/evaluation/summarize.js";
 
 const ANSI = /\u001b\[[0-9;]*m/g;
@@ -20,15 +22,13 @@ export class AngularTestEvaluator implements IEvaluator {
 
   async evaluate(workspace: string): Promise<EvaluationResult> {
     const ng = path.join(workspace, "node_modules", "@angular", "cli", "bin", "ng.js");
-    if (!existsSync(path.join(workspace, "angular.json"))) return EvaluationResult.skipped(this.kind, "no angular.json");
+    if (!isAngularWorkspace(workspace)) return EvaluationResult.skipped(this.kind, "no angular.json");
     if (!existsSync(ng)) return EvaluationResult.skipped(this.kind, "@angular/cli is not installed in the workspace");
 
     const run = await this.runner.run(process.execPath, [ng, "test", "--watch=false"], workspace, TEST_TIMEOUT_MS);
     const output = `${run.stdout}\n${run.stderr}`.replace(ANSI, "");
     const tests = summarize(output);
     if (!tests) return new EvaluationResult(this.kind, false, `ng test produced no test summary: ${output.slice(-500)}`);
-    const text = `${tests.total - tests.failed}/${tests.total} passed` +
-      (tests.failing.length ? `; failing: ${tests.failing.slice(0, 5).join(", ")}` : "");
-    return new EvaluationResult(this.kind, run.exitCode === 0 && tests.failed === 0, text, undefined, { tests });
+    return new EvaluationResult(this.kind, run.exitCode === 0 && tests.failed === 0, testSummary(tests), undefined, { tests });
   }
 }

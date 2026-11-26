@@ -10,6 +10,7 @@ import type { RepositoryEntry } from "../../../domain/interfaces/repository/Repo
 import type { IProcessRunner } from "../../../ports/interfaces/process/IProcessRunner.js";
 import type { ILinkedRepositoryStore } from "../../../ports/interfaces/repository/ILinkedRepositoryStore.js";
 import type { IRepoMirror } from "../../../ports/interfaces/repository/IRepoMirror.js";
+import { numberedLines } from "../../../shared/helpers/text/numberedLines.js";
 
 const MAX_SNIPPET_LINES = 40;
 
@@ -77,7 +78,7 @@ export class GitRepoMirror implements IRepoMirror {
     const lines = (await readFile(file, "utf8")).split(/\r?\n/);
     const first = Math.max(1, Math.floor(startLine));
     const last = Math.min(lines.length, Math.floor(endLine), first + MAX_SNIPPET_LINES - 1);
-    return lines.slice(first - 1, last).map((l, i) => `${first + i}: ${l}`).join("\n");
+    return numberedLines(lines, first, last);
   }
 
   async checkout(name: string, destination: string): Promise<void> {

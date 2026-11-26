@@ -1,8 +1,6 @@
 import { CleanupBatch } from "../../../domain/classes/cleanup/CleanupBatch.js";
 import type { FindingWithCode } from "../../interfaces/solution/FindingWithCode.js";
 
-// ---------------------------------------------------------------------------------------------------------------
-
 export type CheckOutcome =
   | { kind: "committed"; batch: CleanupBatch; fixed: number }
   | { kind: "nothing-changed"; batch: CleanupBatch }

@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { DomainError } from "../../../domain/classes/errors/DomainError.js";
+import { errorMessage } from "../../../shared/helpers/errors/errorMessage.js";
 import { TextRenderer } from "../../classes/render/TextRenderer.js";
 import type { App } from "../../types/composition/App.js";
 
@@ -93,7 +94,7 @@ async function run(work: () => string | Promise<string>): Promise<ToolResult> {
   try {
     return { content: [{ type: "text", text: await work() }] };
   } catch (error) {
-    const text = error instanceof DomainError ? error.message : `Tool failed: ${(error as Error).message.split("\n")[0]}`;
+    const text = error instanceof DomainError ? error.message : `Tool failed: ${errorMessage(error).split("\n")[0]}`;
     return { content: [{ type: "text", text }], isError: true };
   }
 }

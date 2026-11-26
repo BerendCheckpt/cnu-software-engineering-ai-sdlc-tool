@@ -4,8 +4,7 @@ import { CleanupRun } from "../../../domain/classes/cleanup/CleanupRun.js";
 import type { BatchProps } from "../../../domain/interfaces/cleanup/BatchProps.js";
 import type { RunProps } from "../../../domain/interfaces/cleanup/RunProps.js";
 import type { ICleanupStore } from "../../../ports/interfaces/cleanup/ICleanupStore.js";
-
-type Row = Record<string, unknown>;
+import type { Row } from "../../types/sqlite/Row.js";
 
 /** Runs and batches as JSON documents; the state columns are only there to read them at a glance. */
 export class SqliteCleanupStore implements ICleanupStore {

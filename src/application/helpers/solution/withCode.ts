@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { PathGuard } from "../../../domain/classes/security/PathGuard.js";
 import type { Finding } from "../../../domain/interfaces/cleanup/Finding.js";
+import { numberedLines } from "../../../shared/helpers/text/numberedLines.js";
 import type { FindingWithCode } from "../../interfaces/solution/FindingWithCode.js";
 
 /** Lines of context shown around a finding: enough to fix it, few enough to stay cheap. */
@@ -18,7 +19,7 @@ function snippet(files: PathGuard, finding: Finding): string {
     const lines = readFileSync(files.resolve(finding.file), "utf8").split(/\r?\n/);
     const first = Math.max(1, finding.line - SNIPPET_CONTEXT);
     const last = Math.min(lines.length, finding.line + SNIPPET_CONTEXT);
-    return lines.slice(first - 1, last).map((l, i) => `${first + i}: ${l}`).join("\n");
+    return numberedLines(lines, first, last);
   } catch {
     return "";
   }

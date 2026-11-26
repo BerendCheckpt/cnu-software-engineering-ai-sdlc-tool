@@ -1,14 +1,15 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { EvaluationResult } from "../../../domain/classes/evaluation/EvaluationResult.js";
 import type { IEvaluator } from "../../../ports/interfaces/evaluation/IEvaluator.js";
 import type { IProcessRunner } from "../../../ports/interfaces/process/IProcessRunner.js";
 import type { ProcessResult } from "../../../ports/interfaces/process/ProcessResult.js";
+import { AISDLC_DIR } from "../../../shared/constants/workspace/AISDLC_DIR.js";
+import { toolFailure } from "../../../shared/helpers/process/toolFailure.js";
+import { hasDotnetProject } from "../../../shared/helpers/workspace/hasDotnetProject.js";
 import { sonarResult } from "../../helpers/evaluation/sonarResult.js";
 import { reachableFromContainer } from "../../helpers/process/reachableFromContainer.js";
 import type { SonarClient } from "./SonarClient.js";
-
-const DOTNET_PROJECT = /\.(slnx?|csproj)$/i;
 
 const SCAN_TIMEOUT_MS = 15 * 60_000;
 
@@ -38,7 +39,7 @@ export class SonarScannerEvaluator implements IEvaluator {
     try {
       return await sonarResult(this.client, this.projectKey);
     } catch (error) {
-      if (scan.exitCode !== 0) return new EvaluationResult(this.kind, false, `scan failed: ${scan.stderr.slice(-500)}`);
+      if (scan.exitCode !== 0) return new EvaluationResult(this.kind, false, toolFailure("scan", scan.stderr, 500));
       throw error;
     }
   }
@@ -50,7 +51,7 @@ export class SonarScannerEvaluator implements IEvaluator {
       `-Dsonar.host.url=${server}`,
       "-Dsonar.sources=.",
       "-Dsonar.exclusions=**/node_modules/**,.aisdlc/**,**/dist/**,**/coverage/**",
-      `-Dsonar.working.directory=${path.join(workspace, ".aisdlc", "scannerwork")}`,
+      `-Dsonar.working.directory=${path.join(workspace, AISDLC_DIR, "scannerwork")}`,
       // Waits until the server has processed the analysis, so the gate read below is this analysis's.
       "-Dsonar.qualitygate.wait=true",
       "-Dsonar.qualitygate.timeout=600",
@@ -58,6 +59,6 @@ export class SonarScannerEvaluator implements IEvaluator {
   }
 
   private isDotnetOnly(workspace: string): boolean {
-    return !existsSync(path.join(workspace, "package.json")) && readdirSync(workspace).some((f) => DOTNET_PROJECT.test(f));
+    return !existsSync(path.join(workspace, "package.json")) && hasDotnetProject(workspace);
   }
 }

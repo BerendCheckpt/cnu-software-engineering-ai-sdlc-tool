@@ -6,6 +6,8 @@ import type { Snapshot } from "../../../domain/interfaces/cleanup/Snapshot.js";
 import type { ICleanupGateFactory } from "../../../ports/interfaces/cleanup/ICleanupGateFactory.js";
 import type { IDependencyRestorer } from "../../../ports/interfaces/cleanup/IDependencyRestorer.js";
 import type { IProgress } from "../../../ports/interfaces/progress/IProgress.js";
+import { AISDLC_DIR } from "../../../shared/constants/workspace/AISDLC_DIR.js";
+import { errorMessage } from "../../../shared/helpers/errors/errorMessage.js";
 import { runGates } from "../../helpers/evaluation/runGates.js";
 
 /** Restores packages, runs every gate in parallel, then collects findings. No model involved. */
@@ -17,7 +19,7 @@ export class MeasureWorkspace {
   ) {}
 
   async execute(runId: string, workspace: string): Promise<Snapshot> {
-    mkdirSync(path.join(workspace, ".aisdlc"), { recursive: true });
+    mkdirSync(path.join(workspace, AISDLC_DIR), { recursive: true });
     this.progress.emit("restore packages", "started");
     await this.restorer.restore(workspace);
     this.progress.emit("restore packages", "done");
@@ -34,7 +36,7 @@ export class MeasureWorkspace {
         return await source.collect(workspace);
       } catch (error) {
         // A source that silently returned nothing would make every finding look fixed.
-        throw new Error(`${source.name}: ${(error as Error).message}`);
+        throw new Error(`${source.name}: ${errorMessage(error)}`);
       }
     }));
     const limitations = findingSources.flatMap((s) => s.limitations?.() ?? []);
