@@ -5,7 +5,7 @@ import {
   CleanupBatch, CleanupRun, findingKey, isRequired, isSecurityFinding, ValidPr, type CleanupLevel, type Finding,
   type GateSnapshot, type Snapshot,
 } from "../domain/cleanup.js";
-import { isSonar } from "../domain/quality.js";
+import { isSonar, type FixAttempt } from "../domain/quality.js";
 import type { CleanupPlanner } from "../domain/cleanupPlanner.js";
 import type { DiffClassifier } from "../domain/diffClassifier.js";
 import { DomainError } from "../domain/errors.js";
@@ -13,8 +13,8 @@ import type { EvaluationResult } from "../domain/evaluation.js";
 import { PathGuard } from "../domain/pathGuard.js";
 import { timeStamp } from "../domain/progress.js";
 import type {
-  DocReference, ICleanupGateFactory, ICleanupReportWriter, IDependencyRestorer, IFormatter, IGitWorkspace, IProgress,
-  IPullRequestPublisher, IRepoMirror, ISandbox,
+  DocReference, FailedCheck, ICiChecks, ICleanupGateFactory, ICleanupReportWriter, IDependencyRestorer, IFormatter,
+  IGitWorkspace, IProgress, IPullRequestPublisher, IRepoMirror, ISandbox,
 } from "../ports/services.js";
 import type { ICleanupStore } from "../ports/stores.js";
 import type { SearchDocs } from "./docs.js";
@@ -206,10 +206,22 @@ export class NextBatch {
 export type CheckOutcome =
   | { kind: "committed"; batch: CleanupBatch; fixed: number }
   | { kind: "nothing-changed"; batch: CleanupBatch }
-  /** Not committed: something got worse, or a finding of the batch is still open. */
-  | { kind: "regression"; batch: CleanupBatch; problems: string[]; open: FindingWithCode[]; tries: number; maxTries: number }
-  /** The last allowed try failed: the batch keeps its change and waits for the engineer to retry or escalate it. */
-  | { kind: "waiting"; batch: CleanupBatch; problems: string[]; open: FindingWithCode[]; tries: number };
+  /**
+   * Not committed: something got worse, or a finding of the batch is still open. `history` has one line per earlier
+   * failed try, so the next try changes its approach.
+   */
+  | {
+    kind: "regression"; batch: CleanupBatch; problems: string[]; open: FindingWithCode[]; tries: number; maxTries: number;
+    history: string[];
+  }
+  /**
+   * The last allowed try failed: the batch keeps its change and waits for the engineer to retry or escalate it.
+   * `diagnosis` says per finding left why, for the engineer's choice.
+   */
+  | {
+    kind: "waiting"; batch: CleanupBatch; problems: string[]; open: FindingWithCode[]; tries: number; history: string[];
+    diagnosis: string[];
+  };
 
 /** `cleanup:<runId>#<batch>`: the fix loop of one batch. */
 export function batchSubject(batch: CleanupBatch): string {
@@ -271,20 +283,29 @@ export class CheckBatch {
       { fewerTestsApproved: gates.some((g) => g.gate === "tests") });
     // Every finding of the batch must be gone, whatever its severity; new ones are already a problem above.
     const open = stillOpen(batch.findings, current);
-    const loop = this.fixLoop.checkBatch(batchSubject(batch), { blocking: open, reported: [], problems }, this.maxTries);
+    const subject = batchSubject(batch);
+    const loop = this.fixLoop.checkBatch(subject,
+      { blocking: open, reported: [], problems, changed: this.classifier.files(diff) }, this.maxTries);
     if (loop.kind !== "clean") {
       const summary = [...problems, ...open.map((f) => `${f.rule} still open`)].slice(0, 3).join("; ");
+      // Every failed check counts on the batch, the last one too: it is the batch's count over all rounds.
+      batch.recordFailedCheck();
+      const failed = this.fixLoop.current(subject)?.failedAttempts ?? [];
+      const history = triedBefore(failed.slice(0, -1));
       if (loop.kind === "engineer") {
         batch.waitForEngineer();
         this.store.saveBatch(batch);
         this.progress.emit(step, "failed", `try ${loop.tries} of ${loop.maxTries}, waiting for the engineer: ${summary}`);
-        return { kind: "waiting", batch, problems, open: withCode(run.workspace, open), tries: loop.tries };
+        return {
+          kind: "waiting", batch, problems, open: withCode(run.workspace, open), tries: loop.tries, history,
+          diagnosis: diagnose(failed),
+        };
       }
-      batch.recordFailedCheck();
       this.store.saveBatch(batch);
       this.progress.emit(step, "failed", `try ${loop.tries} of ${loop.maxTries}: ${summary}`);
       return {
         kind: "regression", batch, problems, open: withCode(run.workspace, open), tries: loop.tries, maxTries: loop.maxTries,
+        history,
       };
     }
 
@@ -372,7 +393,8 @@ export class EscalateBatch {
       if (problems.length) {
         await this.git.resetTo(run.workspace, batch.baseSha);
       } else {
-        left = stillOpen(batch.findings, current);
+        // Failing CI checks are never in the local measurement: they are left until CI says otherwise.
+        left = batch.category === "ci" ? batch.findings : stillOpen(batch.findings, current);
         commitSha = await this.git.commit(run.workspace, commitMessage(batch, ValidPr.fixed(run.reference, current).length));
         run.acceptMeasurement(current);
       }
@@ -430,6 +452,44 @@ export class SkipBatch {
   }
 }
 
+function where(f: Finding): string {
+  return `${f.rule}${f.file ? ` ${f.file}${f.line ? `:${f.line}` : ""}` : ""}`;
+}
+
+/** One line per earlier failed try: what was still open, what got worse, which files the change touched. */
+export function triedBefore(failed: FixAttempt[]): string[] {
+  return failed.map((a, i) => [
+    `try ${i + 1}:`,
+    [
+      a.blocking.length ? `still open ${a.blocking.map(where).join(", ")}` : "",
+      ...a.problems,
+      // A CI round is not a local check, so it has no files of its own.
+      a.changed?.length ? `changed ${a.changed.join(", ")}` : "",
+    ].filter(Boolean).join("; "),
+  ].join(" "));
+}
+
+/** Why a batch waits, per finding left: how often it stayed open, or what else got worse. Decided without a model. */
+export function diagnose(failed: FixAttempt[]): string[] {
+  const last = failed.at(-1);
+  if (!last) return [];
+  const touched = [...new Set(failed.flatMap((a) => a.changed ?? []))];
+  // A CI check's log differs per round; its name is what identifies it.
+  const key = (f: Finding) => (f.source === "ci" ? `ci|${f.rule}` : findingKey(f));
+  const lines = last.blocking.map((f) => {
+    const openIn = failed.filter((a) => a.blocking.some((b) => key(b) === key(f))).length;
+    const file = f.file && !touched.includes(f.file) ? `; its file ${f.file} was never changed` : "";
+    return `${where(f)}: still open in ${openIn} of ${failed.length} tries${file}`;
+  });
+  if (last.problems.length) {
+    lines.push(last.blocking.length
+      ? `Also got worse: ${last.problems.join("; ")}`
+      : `Every finding is fixed, but something else got worse: ${last.problems.join("; ")}`);
+  }
+  if (touched.length) lines.push(`Files changed over the tries: ${touched.join(", ")}`);
+  return lines;
+}
+
 /** What to tell the caller while a batch waits: only the engineer may choose. */
 export function waitingMessage(runId: string, batch: CleanupBatch): string {
   return `Batch ${batch.number} still has findings open after its last try and waits for the engineer. Ask them to ` +
@@ -465,15 +525,28 @@ export class FinishCleanup {
   async execute(runId: string): Promise<FinishResult> {
     const run = requireRun(this.store, runId);
     run.requireState("in-progress", "ready");
-    const note = run.state === "in-progress" ? await this.prepare(run) : undefined;
+    // The branch the run started from may be gone by now; the PR then goes into the remote's default branch.
+    const existing = run.pullRequest;
+    const base = existing ? { base: run.baseBranch } : await this.git.resolveBase(run.workspace, run.baseBranch);
+    if (base.note) this.progress.emit("base branch", "info", base.note);
+    if (base.base !== run.baseBranch) {
+      run.retarget(base.base);
+      this.store.saveRun(run);
+    }
+    const prepared = run.state === "in-progress" ? await this.prepare(run) : undefined;
+    const note = [base.note, prepared].filter(Boolean).join("\n");
 
     const reportPath = this.folders.report(run.id);
     this.progress.emit("push", "started", run.branch);
     await this.git.push(run.workspace, run.branch);
     this.progress.emit("push", "done", run.branch);
-    this.progress.emit("pull request", "started", `into ${run.baseBranch}`);
-    const pullRequest = await this.publisher.open(run.workspace, run.branch, run.baseBranch,
-      `Clean-up of ${run.repository}`, reportPath);
+    // After a CI fix the PR is already open: the push alone updates it.
+    let pullRequest = existing;
+    if (!pullRequest) {
+      this.progress.emit("pull request", "started", `into ${run.baseBranch}`);
+      pullRequest = await this.publisher.open(run.workspace, run.branch, run.baseBranch,
+        `Clean-up of ${run.repository}`, reportPath);
+    }
     run.published(pullRequest);
     this.store.saveRun(run);
     this.progress.emit("pull request", "done", pullRequest);
@@ -528,6 +601,88 @@ export class FinishCleanup {
   }
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+
+export type CiOutcome =
+  | { kind: "passing" | "pending" | "none"; run: CleanupRun }
+  | { kind: "unsupported"; run: CleanupRun; reason: string }
+  /** CI failed: the run's `ci` batch is open with the failing checks; fix it, check it, then `finish` pushes again. */
+  | { kind: "fixing"; run: CleanupRun; step: NextStep; tries: number; maxTries: number; history: string[] }
+  /** CI failed on the last allowed try: the `ci` batch waits for the engineer, as any batch (ADR 0011). */
+  | { kind: "waiting"; run: CleanupRun; batch: CleanupBatch; tries: number; diagnosis: string[] }
+  /** CI still fails, but the engineer already escalated the `ci` batch; it is not reopened. */
+  | { kind: "escalated"; run: CleanupRun; batch: CleanupBatch };
+
+/** A failing CI check as a finding of the `ci` batch: the check's name is its rule, the tail of its log its message. */
+function ciFinding(check: FailedCheck): Finding {
+  return { source: "ci", rule: check.name, category: "bug", severity: "HIGH", file: "", message: check.log };
+}
+
+/**
+ * Reads the CI of the run's pull request once (ADR 0012). A failing CI opens the run's one `ci` batch with the failing
+ * checks; every failed CI round is a try of that batch, so after `maxTries` the engineer decides.
+ */
+export class CheckCi {
+  constructor(
+    private readonly store: ICleanupStore,
+    private readonly git: IGitWorkspace,
+    private readonly ci: ICiChecks,
+    private readonly fixLoop: SonarFixLoop,
+    private readonly maxTries: number,
+    private readonly progress: IProgress,
+  ) {}
+
+  async execute(runId: string): Promise<CiOutcome> {
+    const run = requireRun(this.store, runId);
+    run.requireState("pushed");
+    if (!run.pullRequest) throw new DomainError(`Clean-up ${run.id} has no pull request. Open it with: cleanup finish`);
+    this.progress.emit("ci", "started", run.pullRequest);
+    const result = await this.ci.read(run.workspace, run.pullRequest);
+    run.recordCi(result.state);
+    if (result.state !== "failing") {
+      this.store.saveRun(run);
+      this.progress.emit("ci", result.state === "passing" ? "done" : "info", result.state);
+      return result.state === "unsupported" ? { kind: "unsupported", run, reason: result.reason } : { kind: result.state, run };
+    }
+
+    const batches = this.store.batches(run.id);
+    const existing = batches.find((b) => b.category === "ci");
+    if (existing && existing.status !== "done") {
+      this.store.saveRun(run);
+      this.progress.emit("ci", "failed", `batch ${existing.number} is ${existing.status}`);
+      return { kind: "escalated", run, batch: existing };
+    }
+    const findings = result.failing.map(ciFinding);
+    const head = await this.git.head(run.workspace);
+    const batch = existing ?? CleanupBatch.plan(run.id, Math.max(-1, ...batches.map((b) => b.number)) + 1, "ci", findings);
+    if (existing) existing.reopenForCi(findings, head);
+    else batch.start(head);
+    run.moveTo("in-progress");
+
+    // A failed CI round is a failed try of the `ci` batch, kept where the model cannot reset it.
+    const subject = batchSubject(batch);
+    const loop = this.fixLoop.checkBatch(subject, { blocking: findings, reported: [], problems: [] }, this.maxTries);
+    batch.recordFailedCheck();
+    const failed = this.fixLoop.current(subject)?.failedAttempts ?? [];
+    const summary = findings.map((f) => f.rule).join(", ");
+    if (loop.kind === "engineer") {
+      batch.waitForEngineer();
+      this.store.saveBatch(batch);
+      this.store.saveRun(run);
+      this.progress.emit("ci", "failed", `try ${loop.tries} of ${loop.maxTries}, waiting for the engineer: ${summary}`);
+      return { kind: "waiting", run, batch, tries: loop.tries, diagnosis: diagnose(failed) };
+    }
+    this.store.saveBatch(batch);
+    this.store.saveRun(run);
+    const tries = loop.kind === "fix-required" ? loop.tries : 0;
+    this.progress.emit("ci", "failed", `try ${tries} of ${this.maxTries}: ${summary}`);
+    return {
+      kind: "fixing", run, step: { kind: "work", run, batch, findings: withCode(run.workspace, findings) },
+      tries, maxTries: this.maxTries, history: triedBefore(failed.slice(0, -1)),
+    };
+  }
+}
+
 export class CleanupStatus {
   constructor(private readonly store: ICleanupStore) {}
 
@@ -548,6 +703,7 @@ function sonarLink(url: string | undefined): { sonarProjectUrl?: string } {
 
 function commitMessage(batch: CleanupBatch, fixed: number): string {
   if (batch.category === "format") return "Clean-up: apply the repository's formatters";
+  if (batch.category === "ci") return `Clean-up: fix the failing CI checks\n\nChecks: ${batch.findings.map((f) => f.rule).join(", ")}`;
   const rules = [...new Set(batch.findings.map((f) => f.rule))].slice(0, 5).join(", ");
   return `Clean-up batch ${batch.number} (${batch.category}): ${fixed} ${fixed === 1 ? "finding" : "findings"} fixed\n\nRules: ${rules}`;
 }

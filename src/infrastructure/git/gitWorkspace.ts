@@ -69,6 +69,22 @@ export class GitWorkspace implements IGitWorkspace {
     await this.git(workspace, "push", "--quiet", "--set-upstream", "origin", `HEAD:refs/heads/${branch}`);
   }
 
+  async resolveBase(workspace: string, base: string): Promise<{ base: string; note?: string }> {
+    if (base !== "HEAD" && BRANCH.test(base)) {
+      const found = await this.runner.run("git", ["ls-remote", "--exit-code", "--heads", "origin", `refs/heads/${base}`], workspace);
+      if (found.exitCode === 0) return { base };
+      if (found.exitCode !== 2) {
+        return { base, note: `could not check whether ${base} is on the remote: ${found.stderr.trim().split("\n")[0]}` };
+      }
+    }
+    const head = await this.runner.run("git", ["ls-remote", "--symref", "origin", "HEAD"], workspace);
+    const fallback = head.exitCode === 0 ? /^ref: refs\/heads\/(\S+)\s+HEAD$/m.exec(head.stdout)?.[1] : undefined;
+    if (fallback && BRANCH.test(fallback)) {
+      return { base: fallback, note: `${base} is not on the remote; the pull request goes into its default branch ${fallback}` };
+    }
+    return { base, note: `${base} is not on the remote and its default branch could not be found` };
+  }
+
   private sha(value: string): string {
     if (!SHA.test(value)) throw new Error(`Not a commit id: ${value}`);
     return value;

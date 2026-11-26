@@ -236,8 +236,9 @@ export const COMMANDS: CliCommand[] = [
   {
     name: "cleanup",
     usage: "cleanup analyze <mirror> [--severity verbose|medium|high] | next <run> | check <run> | skip <run> --reason \"<why>\" | retry <run> | " +
-      "escalate <run> | status <run> | finish <run>   automode: finish pushes and opens the PR; retry and escalate are " +
-      "the engineer's choices for a batch that failed its last try",
+      "escalate <run> | status <run> | finish <run> | ci <run>   automode: finish pushes and opens the PR; ci reads its " +
+      "checks once and opens a batch for the failing ones; retry and escalate are the engineer's choices for a batch " +
+      "that failed its last try",
     run: async (app, args) => {
       const [action] = args.positionals;
       const run = () => positional(args, 1, "clean-up run id");
@@ -275,10 +276,13 @@ export const COMMANDS: CliCommand[] = [
         }
         case "finish": {
           const { reportPath, pullRequest, note } = await app.cleanup.finish.execute(run());
-          return [`PR description: ${reportPath}`, ...(note ? [note] : []), `Pull request: ${pullRequest}`].join("\n");
+          return [`PR description: ${reportPath}`, ...(note ? [note] : []), `Pull request: ${pullRequest}`,
+            `When its CI has finished: aisdlc cleanup ci ${run()}`].join("\n");
         }
+        case "ci":
+          return cleanupRenderer.ci(await app.cleanup.ci.execute(run()));
         default:
-          throw new Error("Use: cleanup analyze | next | check | skip | retry | escalate | status | finish");
+          throw new Error("Use: cleanup analyze | next | check | skip | retry | escalate | status | finish | ci");
       }
     },
   },

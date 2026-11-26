@@ -58,6 +58,8 @@ export interface FixAttempt {
   reported: Finding[];
   /** Everything else that failed: a gate, a regression. */
   problems: string[];
+  /** Files the change touched at this check, so a later try can see what was already tried. */
+  changed?: string[];
 }
 
 export type FixLoopState = "open" | "clean" | "escalated";
@@ -69,6 +71,8 @@ export interface FixLoopProps {
   attempts: FixAttempt[];
   /** The GitHub issue, or where its text was written when it could not be created. */
   escalation?: string;
+  /** Where the current round of tries starts in `attempts`; earlier ones are kept as history. Undefined is 0. */
+  roundStart?: number;
 }
 
 export type FixVerdict =
@@ -95,7 +99,10 @@ export class FixLoop {
   get state(): FixLoopState { return this.props.state; }
   get attempts(): FixAttempt[] { return this.props.attempts; }
   get escalation(): string | undefined { return this.props.escalation; }
-  get failures(): number { return this.props.attempts.filter(failed).length; }
+  /** Failed checks in the current round; a human's `reopen` starts a new round. */
+  get failures(): number { return this.props.attempts.slice(this.props.roundStart ?? 0).filter(failed).length; }
+  /** Every failed check, earlier rounds included. */
+  get failedAttempts(): FixAttempt[] { return this.props.attempts.filter(failed); }
   get last(): FixAttempt | undefined { return this.props.attempts.at(-1); }
 
   /** `maxFixAttempts` overrides the policy's, for a task with its own budget such as a clean-up batch. */
@@ -120,10 +127,10 @@ export class FixLoop {
     this.props.escalation = where;
   }
 
-  /** A human took the escalation and hands the task back: the count starts again. */
+  /** A human took the escalation and hands the task back: the count starts again; the earlier tries stay as history. */
   reopen(): void {
     if (this.props.state !== "escalated") throw new DomainError(`${this.subject} is not escalated.`);
-    this.props = { subject: this.props.subject, state: "open", attempts: [] };
+    this.props = { subject: this.props.subject, state: "open", attempts: this.props.attempts, roundStart: this.props.attempts.length };
   }
 
   toProps(): FixLoopProps {

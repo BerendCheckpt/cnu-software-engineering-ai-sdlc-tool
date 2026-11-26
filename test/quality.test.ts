@@ -73,7 +73,9 @@ describe("FixLoop", () => {
     expect(() => loop.record(attempt([]), policy)).toThrow(/escalated/);
 
     loop.reopen();
-    expect([loop.state, loop.attempts.length]).toEqual(["open", 0]);
+    // The count starts again; the earlier tries stay as history.
+    expect([loop.state, loop.failures, loop.attempts.length, loop.failedAttempts.length]).toEqual(["open", 0, 4, 4]);
+    expect(loop.record(attempt([issue("HIGH")]), policy)).toEqual({ kind: "fix-required", failures: 1, maxFixAttempts: 3 });
     expect(() => loop.reopen()).toThrow(/not escalated/);
   });
 

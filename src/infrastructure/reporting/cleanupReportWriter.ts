@@ -47,13 +47,16 @@ export class CleanupReportWriter implements ICleanupReportWriter {
         : b.status === "escalated"
           ? `${b.commitSha ? `\`${b.commitSha.slice(0, 8)}\`, ` : ""}${this.cell(b.note ?? "escalated")}`
           : `skipped: ${this.cell(b.note ?? "")}`;
-      return `| ${b.number} | ${b.category} | ${b.category === "format" ? "-" : b.findings.length} | ${gates} | ${outcome} |`;
+      // Checks it took: every failed one, plus the one that passed.
+      const tries = b.category === "format" ? "-" : b.attempts + (b.status === "done" ? 1 : 0);
+      return `| ${b.number} | ${b.category} | ${b.category === "format" ? "-" : b.findings.length} | ${tries} | ${gates} | ${outcome} |`;
     });
     return [
       `## Clean-up of ${run.repository}`,
       "",
       `${fixed.length} of ${run.baseline.findings.length} findings fixed, with no test that passed before failing now ` +
         "and no new findings.",
+      `Branch \`${run.branch}\` into \`${run.baseBranch}\`.`,
       ...(run.baseline.limitations ?? []).map((l) => `Not covered: ${l}`),
       "",
       ...this.changelog(fixed, batches),
@@ -69,8 +72,8 @@ export class CleanupReportWriter implements ICleanupReportWriter {
       "",
       "### Batches",
       "",
-      "| # | Category | Findings | Flagged | Outcome |",
-      "|---|---|---|---|---|",
+      "| # | Category | Findings | Tries | Flagged | Outcome |",
+      "|---|---|---|---|---|---|",
       ...rows,
       "",
       ...(escalated.length ? [

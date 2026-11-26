@@ -2,7 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DecideApproval, RequestApproval } from "../application/approvals.js";
 import {
-  AnalyzeRepository, CheckBatch, CleanupFolders, CleanupStatus, EscalateBatch, FinishCleanup, MeasureWorkspace, NextBatch,
+  AnalyzeRepository, CheckBatch, CheckCi, CleanupFolders, CleanupStatus, EscalateBatch, FinishCleanup, MeasureWorkspace, NextBatch,
   RetryBatch, SkipBatch,
 } from "../application/cleanup.js";
 import { CrystallizeFolders, CrystallizeMigration, RequestCrystallization } from "../application/crystallize.js";
@@ -29,6 +29,7 @@ import { loadEnvFile } from "../infrastructure/config/envFile.js";
 import { YamlSourceCatalog } from "../infrastructure/docs/yamlSourceCatalog.js";
 import { SonarClient } from "../infrastructure/evaluation/sonarClient.js";
 import { DotnetFormatter, EslintFormatter } from "../infrastructure/formatters/formatters.js";
+import { GhCiChecks } from "../infrastructure/git/ghCiChecks.js";
 import { GhIssueTracker } from "../infrastructure/git/ghIssueTracker.js";
 import { GhPullRequestPublisher } from "../infrastructure/git/ghPullRequestPublisher.js";
 import { GitRepoMirror } from "../infrastructure/git/gitRepoMirror.js";
@@ -52,7 +53,8 @@ import { SqliteFixLoopStore } from "../infrastructure/sqlite/sqliteFixLoopStore.
 import { SqliteLinkedRepositoryStore } from "../infrastructure/sqlite/sqliteLinkedRepositoryStore.js";
 import { SqliteSolutionStore } from "../infrastructure/sqlite/sqliteSolutionStore.js";
 import type {
-  ICleanupGateFactory, IDependencyRestorer, IEvaluator, IFormatter, IIssueTracker, IPullRequestPublisher, ISandbox,
+  ICiChecks, ICleanupGateFactory, IDependencyRestorer, IEvaluator, IFormatter, IIssueTracker, IPullRequestPublisher,
+  ISandbox,
 } from "../ports/services.js";
 
 /** The repository root: `dist/adapters/composition.js` → `../..`. Override with `AISDLC_HOME`. */
@@ -111,6 +113,8 @@ export interface CleanupParts {
   gates: ICleanupGateFactory;
   formatters: IFormatter[];
   publisher?: IPullRequestPublisher;
+  /** Replaces `gh pr checks`; tests use this to stay off GitHub. */
+  ci?: ICiChecks;
 }
 
 /** The composition root: the only place that knows every concrete class. */
@@ -216,6 +220,7 @@ function createCleanup(
     skip: new SkipBatch(store, git, progress),
     finish: new FinishCleanup(folders, store, parts.gates, writer, fixLoop, git,
       parts.publisher ?? new GhPullRequestPublisher(host), searchDocs, progress),
+    ci: new CheckCi(store, git, parts.ci ?? new GhCiChecks(host), fixLoop, policy.maxTries, progress),
     status: new CleanupStatus(store),
   };
 }

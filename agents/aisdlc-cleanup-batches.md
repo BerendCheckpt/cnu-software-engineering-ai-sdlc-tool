@@ -10,11 +10,13 @@ name and the rules for fixing; follow those rules. Pass `--session <name>` on ev
 1. `aisdlc cleanup next <run> --session <name>`, once. It prints the open batch: its findings with the code around
    each one, and the workspace folder.
 2. Read every file the batch names in one message, then make all of the batch's edits in one message. Edit only
-   inside the printed workspace.
+   inside the printed workspace. A `ci` batch names no files: it shows the end of each failing CI check's log. Find
+   the cause from the log (Grep the workspace for what it names), fix it, and keep behaviour the same.
 3. `aisdlc cleanup check <run> --session <name>`.
    - **committed**: the output already shows the next batch. Go to step 2.
    - **not committed**: fix every finding and problem it lists, whatever the severity, and check again. Never get
-     around the try count.
+     around the try count. Read "Tried before" when it is there: change your approach, and never repeat an edit
+     that already failed.
    - **STOP, waits for the engineer**: the last try failed. Stop at once and reply; only the engineer chooses
      between `cleanup retry` and `cleanup escalate`, and you run neither.
 4. Stop when the output says all batches are handled. Do not run `finish`, `retry`, `escalate`, `approve` or `deny`,

@@ -18,6 +18,8 @@ the way: the engineer reviews the pull request.
   tests, dependencies or security-sensitive code is committed and flagged in the PR.
 - **The PR.** `finish` writes the PR body (changelog of every fixed finding ranked by severity, every security
   finding with its status and the pulled docs about it, the changes to review closely), pushes and opens the PR.
+- **Green CI.** `cleanup ci` reads the PR's checks once. Failing checks become a `ci` batch, fixed like any other,
+  and `finish` pushes the fix to the same PR, until CI is green or the engineer decides.
 
 Your job is the part in the middle: fix the findings of one batch at a time. You run the CLI yourself; the engineer
 does not need to use aisdlc separately.
@@ -52,11 +54,13 @@ tell the engineer they can follow every step live in their own terminal with:
       - **committed**: the output already shows the next batch; fix it (step 2). "Flagged for the PR reviewer" is
         information, not a stop.
       - **not committed**: the output lists what got worse and every finding of the batch that is still open, with
-        "try k of 5". Fix all of them, whatever their severity, and check again.
+        "try k of 5". Fix all of them, whatever their severity, and check again. From try 2 on it also lists
+        "Tried before": what each earlier try left open and which files it changed. Change your approach; never
+        repeat an edit that already failed.
       - **STOP, waits for the engineer**: the 5th try failed. Do not edit anything more. Go to step 4.
    Stop when the output says all batches are handled. `skip` also prints the next batch.
 4. **Engineer's decision.** When a batch waits for the engineer, ask them with AskUserQuestion, naming the batch, its
-   category and the findings still open:
+   category and the findings still open, and quoting the "Diagnosis for the engineer" lines the output printed:
    - **Retry**: run `aisdlc cleanup retry <run> --session <name>`. The batch gets 5 more tries, with its change kept.
      Go back to step 3.
    - **PR and issues**: run `aisdlc cleanup escalate <run> --session <name>`. It commits the batch's partial fix when it
@@ -65,7 +69,17 @@ tell the engineer they can follow every step live in their own terminal with:
    Run neither command before the engineer has answered, and run exactly the one they chose.
 5. **Finish.** `aisdlc cleanup finish <run> --session <name>` pushes `cleanup/DD-MM-YYYY-HHmmss` and opens the pull request.
    Give the engineer the PR link and the top of its changelog and security concerns. If the push or the PR failed,
-   run `finish` again: it retries from the push.
+   run `finish` again: it retries from the push. When the branch the run started from is gone on the remote, the PR
+   goes into the remote's default branch; say so.
+6. **Green CI.** Wait until the PR's checks have finished: with the app's pull request tools when you have them,
+   otherwise `gh pr checks <pr-url> --watch`. Then run `aisdlc cleanup ci <run> --session <name>`, which reads the
+   checks once:
+   - **green**, or no checks: the clean-up is done.
+   - **still running**: wait again, then run `cleanup ci` again.
+   - **failed**: the output is the `ci` batch with the end of each failing check's log. Fix it as in step 3 (or hand it
+     to the subagent), check it, then run `finish` again: it pushes to the PR that is already open. Go back to the
+     start of this step. Every failed CI round is a try; after the 5th the batch waits for the engineer (step 4).
+   - **escalated**: the engineer already chose issues for the CI batch; stop and tell them CI is still red.
 
 ## How to fix a finding
 

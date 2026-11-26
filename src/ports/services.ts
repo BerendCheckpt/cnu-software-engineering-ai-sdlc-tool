@@ -182,11 +182,36 @@ export interface IGitWorkspace {
   commit(workspace: string, message: string): Promise<string>;
   resetTo(workspace: string, sha: string): Promise<void>;
   push(workspace: string, branch: string): Promise<void>;
+  /**
+   * The branch the PR goes into: `base` when it is on the remote, else the remote's default branch. `note` says
+   * when it changed or could not be checked.
+   */
+  resolveBase(workspace: string, base: string): Promise<{ base: string; note?: string }>;
 }
 
 /** Opens the pull request for a pushed branch; returns its URL, or what the engineer has to do by hand. */
 export interface IPullRequestPublisher {
   open(workspace: string, branch: string, baseBranch: string, title: string, bodyFile: string): Promise<string>;
+}
+
+/** A CI check of a pull request that failed, with the tail of its failed log. */
+export interface FailedCheck {
+  name: string;
+  log: string;
+}
+
+/**
+ * The CI result of a pull request, read once. `none`: no checks are reported; `unsupported`: not a GitHub pull
+ * request, so it cannot be read.
+ */
+export type CiResult =
+  | { state: "passing" | "pending" | "none" }
+  | { state: "unsupported"; reason: string }
+  | { state: "failing"; failing: FailedCheck[] };
+
+/** Reads the CI checks of a pull request. It never waits for them. */
+export interface ICiChecks {
+  read(workspace: string, pullRequest: string): Promise<CiResult>;
 }
 
 /** A section of the pulled official docs about a security rule. */
