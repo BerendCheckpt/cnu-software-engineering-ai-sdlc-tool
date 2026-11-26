@@ -107,9 +107,13 @@ there are uncommitted changes that the copy does not contain. A clean-up's push 
 
 | Path | What |
 |---|---|
+| `src/shared` | small helpers several layers need; imports no other layer |
 | `src/domain` | entities and rules, no I/O |
 | `src/ports` | interfaces the use cases depend on |
 | `src/application` | one class per use case |
 | `src/infrastructure` | SQLite (FTS5), docs fetcher, git mirror, evaluators, report writer |
 | `src/adapters` | composition root, CLI, MCP server, front door |
 | `test` | Vitest unit and adapter tests; coverage as lcov for SonarQube |
+
+Inside each layer: `<kind>/<feature>/<Name>.ts`, one exported declaration per file, where the kind is `classes`,
+`interfaces`, `types`, `constants` or `helpers`. See [ADR 0013](docs/adr/0013-one-declaration-per-file.md).

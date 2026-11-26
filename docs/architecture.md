@@ -43,11 +43,19 @@ flowchart LR
 
 | Layer | Folder | Depends on |
 |---|---|---|
-| Domain: entities and rules, no I/O | `src/domain` | nothing |
-| Ports: interfaces the use cases need | `src/ports` | domain |
-| Use cases: one class per use case | `src/application` | ports, domain |
-| Infrastructure: SQLite, HTTP, git, test runners | `src/infrastructure` | ports, domain |
+| Shared: small helpers several layers need, no layer types | `src/shared` | nothing |
+| Domain: entities and rules, no I/O | `src/domain` | shared |
+| Ports: interfaces the use cases need | `src/ports` | domain, shared |
+| Use cases: one class per use case | `src/application` | ports, domain, shared |
+| Infrastructure: SQLite, HTTP, git, test runners | `src/infrastructure` | ports, domain, shared |
 | Adapters and composition root | `src/adapters` | everything |
+
+Inside each layer, files are grouped by kind, then by feature: `src/<layer>/<kind>/<feature>/<Name>.ts`, with one
+exported declaration per file, named after it ([ADR 0013](adr/0013-one-declaration-per-file.md)). The kinds are
+`classes`, `interfaces`, `types` (type aliases), `constants` and `helpers` (functions). For example,
+`src/application/classes/cleanup/CheckBatch.ts` or `src/domain/types/cleanup/BatchStatus.ts`. Only the entry
+points keep their own paths, because the package refers to them: `adapters/{cli,mcp,gateway}/main.ts`,
+`adapters/frontdoor/index.ts` and `adapters/composition.ts`. `test/architecture.test.ts` checks all of this.
 
 The CLI, the MCP server, the front door and the chat gateway are adapters over **the same use cases**. MCP is one way
 in, not the architecture. cnu-claude-agent is read-only for this work, so the gateway sits in front of it
